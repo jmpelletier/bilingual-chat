@@ -60,6 +60,8 @@
 // available for assets served this way is very limited; larger sites should continue to use Workers
 // KV to serve assets.)
 import HTML from "./chat.html";
+import ADMIN_HTML from "./chat-admin.html";
+import ExcelJS from "exceljs";
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
 // try/catch and return errors to the client. You probably wouldn't want to use this in production
@@ -105,6 +107,14 @@ export default {
       }
 
       switch (path[0]) {
+        case "admin": {
+          // Serve admin chat page (requires admin session).
+          let session = await validateSession(request, env);
+          if (!session || !session.admin) {
+            return new Response(null, { status: 302, headers: { "Location": "/" } });
+          }
+          return new Response(ADMIN_HTML, {headers: {"Content-Type": "text/html;charset=UTF-8"}});
+        }
         case "login": {
           // Token-based login: GET /login?token=<token>
           if (request.method !== "GET") {
@@ -116,7 +126,7 @@ export default {
             return new Response("Missing token.", { status: 400 });
           }
 
-          // Look up the token in the ALLOWED_USERS secret (JSON: {token: email})
+          // Look up the token in the ALLOWED_USERS secret (JSON: {token: {email, admin}}).
           let allowedUsers;
           try {
             allowedUsers = JSON.parse(env.ALLOWED_USERS);
@@ -124,12 +134,13 @@ export default {
             return new Response("Server misconfiguration.", { status: 500 });
           }
 
-          let email = allowedUsers[token];
-          if (!email) {
+          let entry = allowedUsers[token];
+          if (!entry) {
             return new Response("Invalid or expired login link.", { status: 403 });
           }
 
-          email = email.toLowerCase().trim();
+          let email = entry.email.toLowerCase().trim();
+          let isAdmin = !!entry.admin;
 
           // Create a session via the AuthSession DO
           let id = env.authSessions.idFromName(email);
@@ -147,9 +158,10 @@ export default {
           let { token: sessionToken } = await resp.json();
 
           let maxAge = 30 * 24 * 60 * 60; // 30 days
-          let headers = new Headers({ "Location": "/" });
+          let headers = new Headers({ "Location": isAdmin ? "/admin" : "/" });
           headers.append("Set-Cookie", sessionCookie(sessionToken, maxAge));
           headers.append("Set-Cookie", `session_email=${encodeURIComponent(email)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`);
+          headers.append("Set-Cookie", `session_admin=${isAdmin ? "1" : "0"}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`);
           return new Response(null, { status: 302, headers });
         }
 
@@ -176,6 +188,15 @@ function getSessionToken(request) {
 // Helper: create a Set-Cookie header value for the session token
 function sessionCookie(token, maxAgeSecs) {
   return `session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAgeSecs}`;
+}
+
+// Helper: escape a value for CSV (RFC 4180)
+function csvEscape(val) {
+  let s = String(val);
+  if (s.includes(",") || s.includes("\"") || s.includes("\n") || s.includes("\r")) {
+    return "\"" + s.replace(/"/g, "\"\"") + "\"";
+  }
+  return s;
 }
 
 // Helper: call DeepL Free API to translate text
@@ -223,7 +244,12 @@ async function validateSession(request, env) {
 
   if (!resp.ok) return null;
   let data = await resp.json();
-  return { email, displayName: data.displayName };
+
+  // Check admin cookie
+  let adminMatch = cookie.match(/(?:^|;\s*)session_admin=([^;]+)(?:;|$)/);
+  let admin = adminMatch ? adminMatch[1] === "1" : false;
+
+  return { email, displayName: data.displayName, admin };
 }
 
 // =======================================================================================
@@ -245,7 +271,8 @@ async function handleAuthRequest(path, request, env) {
 
       return new Response(JSON.stringify({
         email: session.email,
-        displayName: session.displayName
+        displayName: session.displayName,
+        admin: session.admin
       }), {
         headers: { "Content-Type": "application/json" }
       });
@@ -382,18 +409,21 @@ async function handleApiRequest(path, request, env) {
       let newUrl = new URL(request.url);
       newUrl.pathname = "/" + path.slice(2).join("/");
 
-      // If this is a WebSocket upgrade, validate the session first.
+      // Validate session for all room requests.
+      let session = await validateSession(request, env);
+      if (!session) {
+        return new Response("Not authenticated", { status: 401 });
+      }
+
+      // If this is a WebSocket upgrade, require display name.
       if (request.headers.get("Upgrade") === "websocket") {
-        let session = await validateSession(request, env);
-        if (!session) {
-          return new Response("Not authenticated", { status: 401 });
-        }
         if (!session.displayName) {
           return new Response("Display name required", { status: 403 });
         }
-        // Pass the authenticated display name to the ChatRoom DO via a header.
+        // Pass the authenticated user info to the ChatRoom DO via headers.
         let modifiedHeaders = new Headers(request.headers);
         modifiedHeaders.set("X-Auth-DisplayName", session.displayName);
+        modifiedHeaders.set("X-Auth-Email", session.email);
         let modifiedRequest = new Request(newUrl, {
           headers: modifiedHeaders,
           method: request.method,
@@ -401,9 +431,12 @@ async function handleApiRequest(path, request, env) {
         return roomObject.fetch(modifiedRequest);
       }
 
-      // Send the request to the object. The `fetch()` method of a Durable Object stub has the
-      // same signature as the global `fetch()` function, but the request is always sent to the
-      // object, regardless of the request's URL.
+      // Export requires admin.
+      if (newUrl.pathname === "/export" && !session.admin) {
+        return new Response("Forbidden", { status: 403 });
+      }
+
+      // Send the request to the object.
       return roomObject.fetch(newUrl, request);
     }
 
@@ -477,8 +510,9 @@ export class ChatRoom {
           // Get the client's IP address for use with the rate limiter.
           let ip = request.headers.get("CF-Connecting-IP");
 
-          // Get the authenticated display name passed by the Worker.
+          // Get the authenticated user info passed by the Worker.
           let displayName = request.headers.get("X-Auth-DisplayName");
+          let email = request.headers.get("X-Auth-Email") || "";
 
           // To accept the WebSocket request, we create a WebSocketPair (which is like a socketpair,
           // i.e. two WebSockets that talk to each other), we return one end of the pair in the
@@ -488,10 +522,86 @@ export class ChatRoom {
           let pair = new WebSocketPair();
 
           // We're going to take pair[1] as our end, and return pair[0] to the client.
-          await this.handleSession(pair[1], ip, displayName);
+          await this.handleSession(pair[1], ip, displayName, email);
 
           // Now we return the other end of the pair to the client.
           return new Response(null, { status: 101, webSocket: pair[0] });
+        }
+
+        case "/export": {
+          // Export all chat history as XLSX with an Excel Table.
+          let storage = await this.storage.list();
+          let rows = [];
+          for (let value of storage.values()) {
+            let msg;
+            try { msg = JSON.parse(value); } catch { continue; }
+            if (!msg.message) continue;
+
+            let ts = msg.timestamp ? new Date(msg.timestamp).toISOString() : "";
+            let email = msg.email || "";
+            let nickname = msg.name || "";
+
+            let language = "";
+            let english = "";
+            let japanese = "";
+
+            if (msg.translation) {
+              if (msg.translation.lang === "JA") {
+                language = "en";
+                english = msg.message;
+                japanese = msg.translation.text;
+              } else if (msg.translation.lang === "EN") {
+                language = "ja";
+                japanese = msg.message;
+                english = msg.translation.text;
+              }
+            } else {
+              english = msg.message;
+            }
+
+            rows.push([ts, email, nickname, language, english, japanese]);
+          }
+
+          let wb = new ExcelJS.Workbook();
+          let ws = wb.addWorksheet("Chat");
+          ws.columns = [
+            { width: 30 },
+            { width: 30 },
+            { width: 15 },
+            { width: 8 },
+            { width: 50 },
+            { width: 50 },
+          ];
+          ws.addTable({
+            name: "ChatExport",
+            ref: "A1",
+            headerRow: true,
+            columns: [
+              { name: "timestamp", filterButton: true },
+              { name: "email", filterButton: true },
+              { name: "nickname", filterButton: true },
+              { name: "language", filterButton: true },
+              { name: "english", filterButton: true },
+              { name: "japanese", filterButton: true },
+            ],
+            rows: rows,
+          });
+
+          // Enable text wrapping on all cells
+          ws.eachRow(row => {
+            row.eachCell(cell => {
+              cell.alignment = { wrapText: true };
+            });
+          });
+
+          let buf = await wb.xlsx.writeBuffer();
+
+          return new Response(buf, {
+            headers: {
+              "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              "Content-Disposition": "attachment; filename=\"chat-export.xlsx\""
+            }
+          });
         }
 
         default:
@@ -501,7 +611,7 @@ export class ChatRoom {
   }
 
   // handleSession() implements our WebSocket-based chat protocol.
-  async handleSession(webSocket, ip, displayName) {
+  async handleSession(webSocket, ip, displayName, email) {
     // Accept our end of the WebSocket. This tells the runtime that we'll be terminating the
     // WebSocket in JavaScript, not sending it elsewhere.
     this.state.acceptWebSocket(webSocket);
@@ -514,9 +624,9 @@ export class ChatRoom {
 
     // Create our session and add it to the sessions map.
     // The display name is set server-side from the authenticated session.
-    let session = { limiterId, limiter, blockedMessages: [], name: displayName };
-    // attach limiterId and name to the webSocket so it survives hibernation
-    webSocket.serializeAttachment({ ...webSocket.deserializeAttachment(), limiterId: limiterId.toString(), name: displayName });
+    let session = { limiterId, limiter, blockedMessages: [], name: displayName, email };
+    // attach limiterId, name, and email to the webSocket so it survives hibernation
+    webSocket.serializeAttachment({ ...webSocket.deserializeAttachment(), limiterId: limiterId.toString(), name: displayName, email });
     this.sessions.set(webSocket, session);
 
     // Queue "join" messages for all online users, to populate the client's roster.
@@ -565,7 +675,7 @@ export class ChatRoom {
 
       // Name is set server-side at connection time, so all messages are chat messages.
       // Construct sanitized message for storage and broadcast.
-      data = { name: session.name, message: "" + data.message };
+      data = { name: session.name, email: session.email, message: "" + data.message };
 
       // Block people from sending overly long messages. This is also enforced on the client,
       // so to trigger this the user must be bypassing the client code.
