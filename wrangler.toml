@@ -7,6 +7,8 @@ main = "src/chat.mjs"
 bindings = [
   { name = "rooms", class_name = "ChatRoom" },
   { name = "limiters", class_name = "RateLimiter" },
+  { name = "authSessions", class_name = "AuthSession" },
+  { name = "roomRegistry", class_name = "RoomRegistry" },
 ]
 
 [[rules]]
@@ -18,3 +20,11 @@ fallthrough = false
 [[migrations]]
 tag = "v1"                                       # Should be unique for each entry
 new_sqlite_classes = ["ChatRoom", "RateLimiter"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["AuthSession"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["RoomRegistry"]

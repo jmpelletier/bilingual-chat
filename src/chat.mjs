@@ -105,6 +105,54 @@ export default {
       }
 
       switch (path[0]) {
+        case "login": {
+          // Token-based login: GET /login?token=<token>
+          if (request.method !== "GET") {
+            return new Response("Method not allowed", { status: 405 });
+          }
+
+          let token = url.searchParams.get("token");
+          if (!token) {
+            return new Response("Missing token.", { status: 400 });
+          }
+
+          // Look up the token in the ALLOWED_USERS secret (JSON: {token: email})
+          let allowedUsers;
+          try {
+            allowedUsers = JSON.parse(env.ALLOWED_USERS);
+          } catch {
+            return new Response("Server misconfiguration.", { status: 500 });
+          }
+
+          let email = allowedUsers[token];
+          if (!email) {
+            return new Response("Invalid or expired login link.", { status: 403 });
+          }
+
+          email = email.toLowerCase().trim();
+
+          // Create a session via the AuthSession DO
+          let id = env.authSessions.idFromName(email);
+          let stub = env.authSessions.get(id);
+
+          let resp = await stub.fetch(new Request("https://dummy/create-session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+          }));
+
+          if (!resp.ok) {
+            return new Response("Failed to create session.", { status: 500 });
+          }
+
+          let { token: sessionToken } = await resp.json();
+
+          let maxAge = 30 * 24 * 60 * 60; // 30 days
+          let headers = new Headers({ "Location": "/" });
+          headers.append("Set-Cookie", sessionCookie(sessionToken, maxAge));
+          headers.append("Set-Cookie", `session_email=${encodeURIComponent(email)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`);
+          return new Response(null, { status: 302, headers });
+        }
+
         case "api":
           // This is a request for `/api/...`, call the API handler.
           return handleApiRequest(path.slice(1), request, env);
@@ -117,64 +165,186 @@ export default {
 }
 
 
+// =======================================================================================
+// Helper: parse session token from cookie header
+function getSessionToken(request) {
+  let cookie = request.headers.get("Cookie") || "";
+  let match = cookie.match(/(?:^|;\s*)session=([a-f0-9]{64})(?:;|$)/);
+  return match ? match[1] : null;
+}
+
+// Helper: create a Set-Cookie header value for the session token
+function sessionCookie(token, maxAgeSecs) {
+  return `session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAgeSecs}`;
+}
+
+// Helper: validate session by calling AuthSession DO, returns {email, displayName} or null
+async function validateSession(request, env) {
+  let token = getSessionToken(request);
+  if (!token) return null;
+
+  // We need to find which email this token belongs to. We store email in a signed cookie.
+  let cookie = request.headers.get("Cookie") || "";
+  let emailMatch = cookie.match(/(?:^|;\s*)session_email=([^;]+)(?:;|$)/);
+  if (!emailMatch) return null;
+
+  let email = decodeURIComponent(emailMatch[1]).toLowerCase().trim();
+  let id = env.authSessions.idFromName(email);
+  let stub = env.authSessions.get(id);
+
+  let resp = await stub.fetch(new Request("https://dummy/validate", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+    headers: { "Content-Type": "application/json" }
+  }));
+
+  if (!resp.ok) return null;
+  let data = await resp.json();
+  return { email, displayName: data.displayName };
+}
+
+// =======================================================================================
+// Auth API routes
+
+async function handleAuthRequest(path, request, env) {
+  switch (path[0]) {
+    case "session": {
+      if (request.method !== "GET") {
+        return new Response("Method not allowed", { status: 405 });
+      }
+
+      let session = await validateSession(request, env);
+      if (!session) {
+        return new Response(JSON.stringify({ error: "Not authenticated." }), {
+          status: 401, headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      return new Response(JSON.stringify({
+        email: session.email,
+        displayName: session.displayName
+      }), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    case "set-name": {
+      if (request.method !== "POST") {
+        return new Response("Method not allowed", { status: 405 });
+      }
+
+      let session = await validateSession(request, env);
+      if (!session) {
+        return new Response(JSON.stringify({ error: "Not authenticated." }), {
+          status: 401, headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      let { displayName } = await request.json();
+      if (!displayName || typeof displayName !== "string" || displayName.trim().length === 0) {
+        return new Response(JSON.stringify({ error: "Display name is required." }), {
+          status: 400, headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      displayName = displayName.trim();
+      if (displayName.length > 32) {
+        return new Response(JSON.stringify({ error: "Display name too long." }), {
+          status: 400, headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      let id = env.authSessions.idFromName(session.email);
+      let stub = env.authSessions.get(id);
+
+      await stub.fetch(new Request("https://dummy/set-name", {
+        method: "POST",
+        body: JSON.stringify({ displayName }),
+        headers: { "Content-Type": "application/json" }
+      }));
+
+      return new Response(JSON.stringify({ success: true, displayName }), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    case "logout": {
+      if (request.method !== "POST") {
+        return new Response("Method not allowed", { status: 405 });
+      }
+
+      let token = getSessionToken(request);
+      let cookie = request.headers.get("Cookie") || "";
+      let emailMatch = cookie.match(/(?:^|;\s*)session_email=([^;]+)(?:;|$)/);
+
+      if (token && emailMatch) {
+        let email = decodeURIComponent(emailMatch[1]).toLowerCase().trim();
+        let id = env.authSessions.idFromName(email);
+        let stub = env.authSessions.get(id);
+
+        await stub.fetch(new Request("https://dummy/remove-session", {
+          method: "POST",
+          body: JSON.stringify({ token }),
+          headers: { "Content-Type": "application/json" }
+        }));
+      }
+
+      let headers = new Headers({ "Content-Type": "application/json" });
+      headers.append("Set-Cookie", sessionCookie("0".repeat(64), 0));
+      headers.append("Set-Cookie", `session_email=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`);
+      return new Response(JSON.stringify({ success: true }), { headers });
+    }
+
+    default:
+      return new Response("Not found", { status: 404 });
+  }
+}
+
+
 async function handleApiRequest(path, request, env) {
   // We've received at API request. Route the request based on the path.
 
   switch (path[0]) {
-    case "room": {
-      // Request for `/api/room/...`.
+    case "auth":
+      return handleAuthRequest(path.slice(1), request, env);
 
-      if (!path[1]) {
-        // The request is for just "/api/room", with no ID.
-        if (request.method == "POST") {
-          // POST to /api/room creates a private room.
-          //
-          // Incidentally, this code doesn't actually store anything. It just generates a valid
-          // unique ID for this namespace. Each durable object namespace has its own ID space, but
-          // IDs from one namespace are not valid for any other.
-          //
-          // The IDs returned by `newUniqueId()` are unguessable, so are a valid way to implement
-          // "anyone with the link can access" sharing. Additionally, IDs generated this way have
-          // a performance benefit over IDs generated from names: When a unique ID is generated,
-          // the system knows it is unique without having to communicate with the rest of the
-          // world -- i.e., there is no way that someone in the UK and someone in New Zealand
-          // could coincidentally create the same ID at the same time, because unique IDs are,
-          // well, unique!
-          let id = env.rooms.newUniqueId();
-          return new Response(id.toString(), {headers: {"Access-Control-Allow-Origin": "*"}});
-        } else {
-          // If we wanted to support returning a list of public rooms, this might be a place to do
-          // it. The list of room names might be a good thing to store in KV, though a singleton
-          // Durable Object is also a possibility as long as the Cache API is used to cache reads.
-          // (A caching layer would be needed because a single Durable Object is single-threaded,
-          // so the amount of traffic it can handle is limited. Also, caching would improve latency
-          // for users who don't happen to be located close to the singleton.)
-          //
-          // For this demo, though, we're not implementing a public room list, mainly because
-          // inevitably some trolls would probably register a bunch of offensive room names. Sigh.
-          return new Response("Method not allowed", {status: 405});
+    case "rooms": {
+      // Room registry endpoints.
+      let registryId = env.roomRegistry.idFromName("singleton");
+      let registry = env.roomRegistry.get(registryId);
+
+      if (request.method === "GET") {
+        // GET /api/rooms — list all rooms
+        return registry.fetch(new Request("https://dummy/list"));
+      } else if (request.method === "POST") {
+        // POST /api/rooms — create a new room
+        let session = await validateSession(request, env);
+        if (!session) {
+          return new Response(JSON.stringify({ error: "Not authenticated." }), {
+            status: 401, headers: { "Content-Type": "application/json" }
+          });
         }
+        return registry.fetch(new Request("https://dummy/add", {
+          method: "POST",
+          body: request.body,
+          headers: { "Content-Type": "application/json" }
+        }));
+      }
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    case "room": {
+      // Request for `/api/room/<name>/...`.
+      if (!path[1]) {
+        return new Response("Room name required", { status: 400 });
       }
 
-      // OK, the request is for `/api/room/<name>/...`. It's time to route to the Durable Object
-      // for the specific room.
-      let name = path[1];
-
-      // Each Durable Object has a 256-bit unique ID. IDs can be derived from string names, or
-      // chosen randomly by the system.
-      let id;
-      if (name.match(/^[0-9a-f]{64}$/)) {
-        // The name is 64 hex digits, so let's assume it actually just encodes an ID. We use this
-        // for private rooms. `idFromString()` simply parses the text as a hex encoding of the raw
-        // ID (and verifies that this is a valid ID for this namespace).
-        id = env.rooms.idFromString(name);
-      } else if (name.length <= 32) {
-        // Treat as a string room name (limited to 32 characters). `idFromName()` consistently
-        // derives an ID from a string.
-        id = env.rooms.idFromName(name);
-      } else {
-        return new Response("Name too long", {status: 404});
+      let name = decodeURIComponent(path[1]);
+      if (name.length > 32) {
+        return new Response("Name too long", { status: 404 });
       }
+
+      let id = env.rooms.idFromName(name);
 
       // Get the Durable Object stub for this room! The stub is a client object that can be used
       // to send messages to the remote Durable Object instance. The stub is returned immediately;
@@ -188,6 +358,25 @@ async function handleApiRequest(path, request, env) {
       // to the Durable Object.
       let newUrl = new URL(request.url);
       newUrl.pathname = "/" + path.slice(2).join("/");
+
+      // If this is a WebSocket upgrade, validate the session first.
+      if (request.headers.get("Upgrade") === "websocket") {
+        let session = await validateSession(request, env);
+        if (!session) {
+          return new Response("Not authenticated", { status: 401 });
+        }
+        if (!session.displayName) {
+          return new Response("Display name required", { status: 403 });
+        }
+        // Pass the authenticated display name to the ChatRoom DO via a header.
+        let modifiedHeaders = new Headers(request.headers);
+        modifiedHeaders.set("X-Auth-DisplayName", session.displayName);
+        let modifiedRequest = new Request(newUrl, {
+          headers: modifiedHeaders,
+          method: request.method,
+        });
+        return roomObject.fetch(modifiedRequest);
+      }
 
       // Send the request to the object. The `fetch()` method of a Durable Object stub has the
       // same signature as the global `fetch()` function, but the request is always sent to the
@@ -265,6 +454,9 @@ export class ChatRoom {
           // Get the client's IP address for use with the rate limiter.
           let ip = request.headers.get("CF-Connecting-IP");
 
+          // Get the authenticated display name passed by the Worker.
+          let displayName = request.headers.get("X-Auth-DisplayName");
+
           // To accept the WebSocket request, we create a WebSocketPair (which is like a socketpair,
           // i.e. two WebSockets that talk to each other), we return one end of the pair in the
           // response, and we operate on the other end. Note that this API is not part of the
@@ -273,7 +465,7 @@ export class ChatRoom {
           let pair = new WebSocketPair();
 
           // We're going to take pair[1] as our end, and return pair[0] to the client.
-          await this.handleSession(pair[1], ip);
+          await this.handleSession(pair[1], ip, displayName);
 
           // Now we return the other end of the pair to the client.
           return new Response(null, { status: 101, webSocket: pair[0] });
@@ -286,7 +478,7 @@ export class ChatRoom {
   }
 
   // handleSession() implements our WebSocket-based chat protocol.
-  async handleSession(webSocket, ip) {
+  async handleSession(webSocket, ip, displayName) {
     // Accept our end of the WebSocket. This tells the runtime that we'll be terminating the
     // WebSocket in JavaScript, not sending it elsewhere.
     this.state.acceptWebSocket(webSocket);
@@ -298,9 +490,10 @@ export class ChatRoom {
         err => webSocket.close(1011, err.stack));
 
     // Create our session and add it to the sessions map.
-    let session = { limiterId, limiter, blockedMessages: [] };
-    // attach limiterId to the webSocket so it survives hibernation
-    webSocket.serializeAttachment({ ...webSocket.deserializeAttachment(), limiterId: limiterId.toString() });
+    // The display name is set server-side from the authenticated session.
+    let session = { limiterId, limiter, blockedMessages: [], name: displayName };
+    // attach limiterId and name to the webSocket so it survives hibernation
+    webSocket.serializeAttachment({ ...webSocket.deserializeAttachment(), limiterId: limiterId.toString(), name: displayName });
     this.sessions.set(webSocket, session);
 
     // Queue "join" messages for all online users, to populate the client's roster.
@@ -318,17 +511,21 @@ export class ChatRoom {
     backlog.forEach(value => {
       session.blockedMessages.push(value);
     });
+
+    // Deliver all queued messages and broadcast join.
+    session.blockedMessages.forEach(queued => {
+      webSocket.send(queued);
+    });
+    delete session.blockedMessages;
+
+    this.broadcast({joined: session.name});
+    webSocket.send(JSON.stringify({ready: true}));
   }
 
   async webSocketMessage(webSocket, msg) {
     try {
       let session = this.sessions.get(webSocket);
       if (session.quit) {
-        // Whoops, when trying to send to this WebSocket in the past, it threw an exception and
-        // we marked it broken. But somehow we got another message? I guess try sending a
-        // close(), which might throw, in which case we'll try to send an error, which will also
-        // throw, and whatever, at least we won't accept the message. (This probably can't
-        // actually happen. This is defensive coding.)
         webSocket.close(1011, "WebSocket broken.");
         return;
       }
@@ -341,37 +538,9 @@ export class ChatRoom {
         return;
       }
 
-      // I guess we'll use JSON.
       let data = JSON.parse(msg);
 
-      if (!session.name) {
-        // The first message the client sends is the user info message with their name. Save it
-        // into their session object.
-        session.name = "" + (data.name || "anonymous");
-        // attach name to the webSocket so it survives hibernation
-        webSocket.serializeAttachment({ ...webSocket.deserializeAttachment(), name: session.name });
-
-        // Don't let people use ridiculously long names. (This is also enforced on the client,
-        // so if they get here they are not using the intended client.)
-        if (session.name.length > 32) {
-          webSocket.send(JSON.stringify({error: "Name too long."}));
-          webSocket.close(1009, "Name too long.");
-          return;
-        }
-
-        // Deliver all the messages we queued up since the user connected.
-        session.blockedMessages.forEach(queued => {
-          webSocket.send(queued);
-        });
-        delete session.blockedMessages;
-
-        // Broadcast to all other connections that this user has joined.
-        this.broadcast({joined: session.name});
-
-        webSocket.send(JSON.stringify({ready: true}));
-        return;
-      }
-
+      // Name is set server-side at connection time, so all messages are chat messages.
       // Construct sanitized message for storage and broadcast.
       data = { name: session.name, message: "" + data.message };
 
@@ -561,5 +730,153 @@ class RateLimiterClient {
     } catch (err) {
       this.reportError(err);
     }
+  }
+}
+
+// =======================================================================================
+// The RoomRegistry Durable Object class.
+//
+// A singleton that maintains the list of public room names.
+
+export class RoomRegistry {
+  constructor(state, env) {
+    this.state = state;
+    this.storage = state.storage;
+  }
+
+  async fetch(request) {
+    return await handleErrors(request, async () => {
+      let url = new URL(request.url);
+
+      switch (url.pathname) {
+        case "/list": {
+          let rooms = (await this.storage.get("rooms")) || [];
+          return new Response(JSON.stringify({ rooms }), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        case "/add": {
+          let { name } = await request.json();
+          if (!name || typeof name !== "string") {
+            return new Response(JSON.stringify({ error: "Room name is required." }), {
+              status: 400, headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          name = name.trim();
+          if (name.length === 0 || name.length > 32) {
+            return new Response(JSON.stringify({ error: "Room name must be 1-32 characters." }), {
+              status: 400, headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          let rooms = (await this.storage.get("rooms")) || [];
+          if (rooms.includes(name)) {
+            return new Response(JSON.stringify({ error: "Room already exists." }), {
+              status: 409, headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          rooms.push(name);
+          await this.storage.put("rooms", rooms);
+
+          return new Response(JSON.stringify({ success: true, name }), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        default:
+          return new Response("Not found", { status: 404 });
+      }
+    });
+  }
+}
+
+// =======================================================================================
+// The AuthSession Durable Object class.
+//
+// AuthSession manages session tokens for a single email address.
+// It is keyed by normalized email via idFromName(email).
+
+const MAX_SESSIONS = 10;
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+export class AuthSession {
+  constructor(state, env) {
+    this.state = state;
+    this.storage = state.storage;
+    this.env = env;
+  }
+
+  async fetch(request) {
+    return await handleErrors(request, async () => {
+      let url = new URL(request.url);
+
+      switch (url.pathname) {
+        case "/create-session": {
+          let now = Date.now();
+
+          // Generate session token
+          let tokenBytes = new Uint8Array(32);
+          crypto.getRandomValues(tokenBytes);
+          let token = [...tokenBytes].map(b => b.toString(16).padStart(2, "0")).join("");
+
+          // Load existing sessions, prune expired, add new, cap at MAX_SESSIONS
+          let sessions = (await this.storage.get("sessions")) || [];
+          sessions = sessions.filter(s => s.expiresAt > now);
+          if (sessions.length >= MAX_SESSIONS) {
+            // Evict oldest
+            sessions.sort((a, b) => a.expiresAt - b.expiresAt);
+            sessions = sessions.slice(sessions.length - MAX_SESSIONS + 1);
+          }
+          sessions.push({ token, expiresAt: now + SESSION_MAX_AGE_MS });
+          await this.storage.put("sessions", sessions);
+
+          return new Response(JSON.stringify({ token }), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        case "/validate": {
+          let { token } = await request.json();
+          let now = Date.now();
+
+          let sessions = (await this.storage.get("sessions")) || [];
+          let session = sessions.find(s => s.token === token && s.expiresAt > now);
+          if (!session) {
+            return new Response(JSON.stringify({ error: "Invalid session." }), {
+              status: 401, headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          let displayName = (await this.storage.get("displayName")) || null;
+          return new Response(JSON.stringify({ valid: true, displayName }), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        case "/set-name": {
+          let { displayName } = await request.json();
+          await this.storage.put("displayName", displayName);
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        case "/remove-session": {
+          let { token } = await request.json();
+          let sessions = (await this.storage.get("sessions")) || [];
+          sessions = sessions.filter(s => s.token !== token);
+          await this.storage.put("sessions", sessions);
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        default:
+          return new Response("Not found", { status: 404 });
+      }
+    });
   }
 }

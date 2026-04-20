@@ -106,6 +106,22 @@ p:last-of-type {
   background-color: white;
 }
 
+#login-prompt {
+  position: fixed;
+  z-index: 4;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 150%;
+  color: #555;
+}
+
 #name-input {
   position: fixed;
   font-size: 200%;
@@ -133,40 +149,110 @@ p:last-of-type {
   left: 0;
   right: 0;
   background-color: white;
-  font-size: 200%;
-  margin-top: calc(50vh - 3em);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 10vh;
+  overflow-y: auto;
+}
+
+#room-form h2 {
+  margin: 0 0 16px 0;
+  font-size: 150%;
+}
+
+#room-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px 0;
+  width: 20em;
+  max-width: 90vw;
+}
+
+#room-list li {
+  padding: 12px 16px;
+  margin-bottom: 4px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 120%;
+}
+
+#room-list li:hover {
+  background-color: #f0f0f0;
+}
+
+#room-list .empty {
+  color: #999;
+  cursor: default;
   text-align: center;
+  font-style: italic;
 }
 
-#room-name {
-  font-size: inherit;
+#room-list .empty:hover {
+  background-color: transparent;
+}
+
+#create-room-section {
+  display: flex;
+  gap: 8px;
+  width: 20em;
+  max-width: 90vw;
+}
+
+#create-room-input {
+  flex: 1;
+  font-size: 100%;
+  padding: 8px;
   border: 1px solid #bbb;
-  height: 2em;
-  width: 16em;
-  padding-left: 1em;
 }
 
-#room-form button {
-  font-size: inherit;
+#create-room-btn {
+  font-size: 100%;
+  padding: 8px 16px;
   border: 1px solid #bbb;
   background-color: #eee;
-  height: 2em;
+  cursor: pointer;
 }
 
 @media(max-width:660px) {
-  #name-input, #room-form { font-size: 150%; }
+  #name-input { font-size: 150%; }
   #name-form p { font-size: 75%; }
+  #login-prompt { font-size: 120%; }
 }
 @media(max-width:500px) {
-  #name-input, #room-form { font-size: 100%; }
+  #name-input { font-size: 100%; }
   #name-form p { font-size: 50%; }
+  #login-prompt { font-size: 100%; }
 }
 
-#go-public {
-  width: 4em;
+#rooms-btn {
+  position: fixed;
+  top: 4px;
+  right: 274px;
+  z-index: 1;
+  padding: 4px 12px;
+  border: 1px solid #ccc;
+  background: #f5f5f5;
+  cursor: pointer;
+  font-size: 12px;
 }
-#go-private {
-  width: 20em;
+
+#logout-btn {
+  position: fixed;
+  top: 4px;
+  right: 204px;
+  z-index: 1;
+  padding: 4px 12px;
+  border: 1px solid #ccc;
+  background: #f5f5f5;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+@media(max-width:600px) {
+  #rooms-btn { right: 74px; }
+  #logout-btn { right: 4px; }
 }
 
 </style>
@@ -176,22 +262,28 @@ p:last-of-type {
 
   </head>
   <body>
-    <form id="name-form" action="/fake-form-action">
-      <input id="name-input" placeholder="your name">
-      <p>This chat runs entirely on the edge, powered by<br>
-        <a href="https://blog.cloudflare.com/introducing-workers-durable-objects" target="_blank">Cloudflare Workers Durable Objects</a></p>
+    <div id="login-prompt" style="display:none">
+      <p>Please use your personal login link to access the chat.</p>
+    </div>
+    <form id="name-form" action="/fake-form-action" style="display:none">
+      <input id="name-input" placeholder="your display name">
+      <p>Choose a display name for the chat</p>
     </form>
-    <form id="room-form" action="/fake-form-action">
-      <p>Enter a public room:</p>
-      <input id="room-name" placeholder="room name"><button id="go-public">Go &raquo;</button>
-      <p>OR</p>
-      <button id="go-private">Create a Private Room &raquo;</button>
-    </form>
+    <div id="room-form" style="display:none">
+      <h2>Choose a room</h2>
+      <ul id="room-list"><li class="empty">Loading rooms...</li></ul>
+      <div id="create-room-section">
+        <input id="create-room-input" placeholder="new room name" maxlength="32">
+        <button id="create-room-btn">Create</button>
+      </div>
+    </div>
     <form id="chatroom" action="/fake-form-action">
       <div id="chatlog">
         <div id="spacer"></div>
       </div>
       <div id="roster"></div>
+      <button id="rooms-btn" type="button">Rooms</button>
+      <button id="logout-btn" type="button">Logout</button>
       <input id="chat-input">
     </form>
   </body>
@@ -202,35 +294,94 @@ p:last-of-type {
 <script type="text/javascript">
 let currentWebSocket = null;
 
+let loginPrompt = document.querySelector("#login-prompt");
 let nameForm = document.querySelector("#name-form");
 let nameInput = document.querySelector("#name-input");
 let roomForm = document.querySelector("#room-form");
-let roomNameInput = document.querySelector("#room-name");
-let goPublicButton = document.querySelector("#go-public");
-let goPrivateButton = document.querySelector("#go-private");
+let roomList = document.querySelector("#room-list");
+let createRoomInput = document.querySelector("#create-room-input");
+let createRoomBtn = document.querySelector("#create-room-btn");
 let chatroom = document.querySelector("#chatroom");
 let chatlog = document.querySelector("#chatlog");
 let chatInput = document.querySelector("#chat-input");
 let roster = document.querySelector("#roster");
+let logoutBtn = document.querySelector("#logout-btn");
+let roomsBtn = document.querySelector("#rooms-btn");
 
 // Is the chatlog scrolled to the bottom?
 let isAtBottom = true;
 
-let username;
+let username;  // display name
+let userEmail;
 let roomname;
 
 let hostname = window.location.host;
 if (hostname == "") {
-  // Probably testing the HTML locally.
   hostname = "edge-chat-demo.cloudflareworkers.com";
 }
 
+// =========================================================
+// Auth flow: check session → name → room → chat
+// =========================================================
+
+async function checkSession() {
+  try {
+    let resp = await fetch("/api/auth/session");
+    if (resp.ok) {
+      let data = await resp.json();
+      userEmail = data.email;
+      if (data.displayName) {
+        username = data.displayName;
+        loginPrompt.remove();
+        nameForm.remove();
+        startRoomChooser();
+      } else {
+        loginPrompt.remove();
+        startNameChooser();
+      }
+    } else {
+      // Not authenticated — show login prompt
+      loginPrompt.style.display = "";
+    }
+  } catch (err) {
+    loginPrompt.style.display = "";
+  }
+}
+
 function startNameChooser() {
-  nameForm.addEventListener("submit", event => {
+  nameForm.style.display = "";
+
+  nameForm.addEventListener("submit", async event => {
     event.preventDefault();
-    username = nameInput.value;
-    if (username.length > 0) {
+    let name = nameInput.value.trim();
+    if (!name || name.length === 0) return;
+    if (name.length > 32) {
+      nameInput.value = name.slice(0, 32);
+      return;
+    }
+
+    nameInput.disabled = true;
+
+    try {
+      let resp = await fetch("/api/auth/set-name", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ displayName: name }),
+      });
+
+      let data = await resp.json();
+      if (!resp.ok) {
+        alert(data.error || "Failed to set name.");
+        nameInput.disabled = false;
+        return;
+      }
+
+      username = name;
+      nameForm.remove();
       startRoomChooser();
+    } catch (err) {
+      alert("Network error. Please try again.");
+      nameInput.disabled = false;
     }
   });
 
@@ -244,79 +395,106 @@ function startNameChooser() {
 }
 
 function startRoomChooser() {
-  nameForm.remove();
+  roomForm.style.display = "";
 
   if (document.location.hash.length > 1) {
-    roomname = document.location.hash.slice(1);
+    roomname = decodeURIComponent(document.location.hash.slice(1));
     startChat();
     return;
   }
 
-  roomForm.addEventListener("submit", event => {
-    event.preventDefault();
-    roomname = roomNameInput.value;
-    if (roomname.length > 0) {
-      startChat();
+  // Fetch and render the room list
+  async function loadRooms() {
+    try {
+      let resp = await fetch("/api/rooms");
+      let data = await resp.json();
+      roomList.innerHTML = "";
+      if (data.rooms.length === 0) {
+        let li = document.createElement("li");
+        li.className = "empty";
+        li.textContent = "No rooms yet. Create one below.";
+        roomList.appendChild(li);
+      } else {
+        for (let name of data.rooms) {
+          let li = document.createElement("li");
+          li.textContent = name;
+          li.addEventListener("click", () => {
+            roomname = name;
+            startChat();
+          });
+          roomList.appendChild(li);
+        }
+      }
+    } catch (err) {
+      roomList.innerHTML = "<li class='empty'>Failed to load rooms.</li>";
+    }
+  }
+
+  loadRooms();
+
+  createRoomBtn.addEventListener("click", async () => {
+    let name = createRoomInput.value.trim();
+    if (!name) return;
+
+    createRoomBtn.disabled = true;
+    createRoomInput.disabled = true;
+
+    try {
+      let resp = await fetch("/api/rooms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+
+      let data = await resp.json();
+      if (!resp.ok) {
+        alert(data.error || "Failed to create room.");
+        createRoomBtn.disabled = false;
+        createRoomInput.disabled = false;
+        return;
+      }
+
+      createRoomInput.value = "";
+      createRoomBtn.disabled = false;
+      createRoomInput.disabled = false;
+      await loadRooms();
+    } catch (err) {
+      alert("Network error. Please try again.");
+      createRoomBtn.disabled = false;
+      createRoomInput.disabled = false;
     }
   });
 
-  roomNameInput.addEventListener("input", event => {
-    if (event.currentTarget.value.length > 32) {
-      event.currentTarget.value = event.currentTarget.value.slice(0, 32);
+  createRoomInput.addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      createRoomBtn.click();
     }
   });
 
-  goPublicButton.addEventListener("click", event => {
-    roomname = roomNameInput.value;
-    if (roomname.length > 0) {
-      startChat();
-    }
-  });
-
-  goPrivateButton.addEventListener("click", async event => {
-    roomNameInput.disabled = true;
-    goPublicButton.disabled = true;
-    event.currentTarget.disabled = true;
-
-    let response = await fetch("https://" + hostname + "/api/room", {method: "POST"});
-    if (!response.ok) {
-      alert("something went wrong");
-      document.location.reload();
-      return;
-    }
-
-    roomname = await response.text();
-    startChat();
-  });
-
-  roomNameInput.focus();
+  createRoomInput.focus();
 }
 
 function startChat() {
   roomForm.remove();
 
-  // Normalize the room name a bit.
-  roomname = roomname.replace(/[^a-zA-Z0-9_-]/g, "").replace(/_/g, "-").toLowerCase();
+  roomname = roomname.trim();
 
-  if (roomname.length > 32 && !roomname.match(/^[0-9a-f]{64}$/)) {
+  if (roomname.length === 0 || roomname.length > 32) {
     addChatMessage("ERROR", "Invalid room name.");
     return;
   }
 
-  document.location.hash = "#" + roomname;
+  document.location.hash = "#" + encodeURIComponent(roomname);
 
   chatInput.addEventListener("keydown", event => {
     if (event.keyCode == 38) {
-      // up arrow
       chatlog.scrollBy(0, -50);
     } else if (event.keyCode == 40) {
-      // down arrow
       chatlog.scrollBy(0, 50);
     } else if (event.keyCode == 33) {
-      // page up
       chatlog.scrollBy(0, -chatlog.clientHeight + 50);
     } else if (event.keyCode == 34) {
-      // page down
       chatlog.scrollBy(0, chatlog.clientHeight - 50);
     }
   });
@@ -327,8 +505,6 @@ function startChat() {
     if (currentWebSocket) {
       currentWebSocket.send(JSON.stringify({message: chatInput.value}));
       chatInput.value = "";
-
-      // Scroll to bottom whenever sending a message.
       chatlog.scrollBy(0, 1e8);
     }
   });
@@ -345,14 +521,11 @@ function startChat() {
 
   chatInput.focus();
   document.body.addEventListener("click", event => {
-    // If the user clicked somewhere in the window without selecting any text, focus the chat
-    // input.
     if (window.getSelection().toString() == "") {
       chatInput.focus();
     }
   });
 
-  // Detect mobile keyboard appearing and disappearing, and adjust the scroll as appropriate.
   if('visualViewport' in window) {
     window.visualViewport.addEventListener('resize', function(event) {
       if (isAtBottom) {
@@ -361,6 +534,31 @@ function startChat() {
     });
   }
 
+  // Rooms button handler
+  roomsBtn.addEventListener("click", () => {
+    if (currentWebSocket) {
+      currentWebSocket.close();
+      currentWebSocket = null;
+    }
+    document.location.hash = "";
+    document.location.reload();
+  });
+
+  // Logout handler
+  logoutBtn.addEventListener("click", async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch (err) {
+      // Ignore errors, clear local state anyway.
+    }
+    if (currentWebSocket) {
+      currentWebSocket.close();
+      currentWebSocket = null;
+    }
+    document.location.hash = "";
+    document.location.reload();
+  });
+
   join();
 }
 
@@ -368,9 +566,8 @@ let lastSeenTimestamp = 0;
 let wroteWelcomeMessages = false;
 
 function join() {
-  // If we are running via wrangler dev, use ws:
   const wss = document.location.protocol === "http:" ? "ws://" : "wss://";
-  let ws = new WebSocket(wss + hostname + "/api/room/" + roomname + "/websocket");
+  let ws = new WebSocket(wss + hostname + "/api/room/" + encodeURIComponent(roomname) + "/websocket");
   let rejoined = false;
   let startTime = Date.now();
 
@@ -379,28 +576,23 @@ function join() {
       rejoined = true;
       currentWebSocket = null;
 
-      // Clear the roster.
       while (roster.firstChild) {
         roster.removeChild(roster.firstChild);
       }
 
-      // Don't try to reconnect too rapidly.
       let timeSinceLastJoin = Date.now() - startTime;
       if (timeSinceLastJoin < 10000) {
-        // Less than 10 seconds elapsed since last join. Pause a bit.
         await new Promise(resolve => setTimeout(resolve, 10000 - timeSinceLastJoin));
       }
 
-      // OK, reconnect now!
       join();
     }
   }
 
   ws.addEventListener("open", event => {
     currentWebSocket = ws;
-
-    // Send user info message.
-    ws.send(JSON.stringify({name: username}));
+    // No need to send a name message; the server already knows who we are
+    // from the session cookie.
   });
 
   ws.addEventListener("message", event => {
@@ -420,26 +612,16 @@ function join() {
         }
       }
     } else if (data.ready) {
-      // All pre-join messages have been delivered.
       if (!wroteWelcomeMessages) {
         wroteWelcomeMessages = true;
         addChatMessage(null,
-            "* This is a demo app built with Cloudflare Workers Durable Objects. The source code " +
-            "can be found at: https://github.com/cloudflare/workers-chat-demo");
+            "* This is a demo app built with Cloudflare Workers Durable Objects.");
         addChatMessage(null,
-            "* WARNING: Participants in this chat are random people on the internet. " +
-            "Names are not authenticated; anyone can pretend to be anyone. The people " +
-            "you are chatting with are NOT Cloudflare employees. Chat history is saved.");
-        if (roomname.length == 64) {
-          addChatMessage(null,
-              "* This is a private room. You can invite someone to the room by sending them the URL.");
-        } else {
-          addChatMessage(null,
-              "* Welcome to #" + roomname + ". Say hi!");
-        }
+            "* You are authenticated as " + username + ". Chat history is saved.");
+        addChatMessage(null,
+            "* Welcome to " + roomname + ". Say hi!");
       }
     } else {
-      // A regular chat message.
       if (data.timestamp > lastSeenTimestamp) {
         addChatMessage(data.name, data.message);
         lastSeenTimestamp = data.timestamp;
@@ -467,16 +649,14 @@ function addChatMessage(name, text) {
   }
   p.appendChild(document.createTextNode(text));
 
-  // Append the new chat line, making sure that if the chatlog was scrolled to the bottom
-  // before, it remains scrolled to the bottom, and otherwise the scroll position doesn't
-  // change.
   chatlog.appendChild(p);
   if (isAtBottom) {
     chatlog.scrollBy(0, 1e8);
   }
 }
 
-startNameChooser();
+// Start the auth flow on page load
+checkSession();
 </script>
 <!--===================================================================================-->
 </html>
