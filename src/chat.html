@@ -166,6 +166,7 @@ function startNameChooser() {
 
 function startRoomChooser() {
   roomForm.style.display = "";
+  roomsBtn.style.display = "none";
 
   if (document.location.hash.length > 1) {
     roomname = decodeURIComponent(document.location.hash.slice(1));
@@ -247,6 +248,7 @@ function startRoomChooser() {
 
 function startChat() {
   roomForm.remove();
+  roomsBtn.style.display = "";
 
   roomname = roomname.trim();
 
@@ -320,7 +322,6 @@ function startChat() {
 }
 
 let lastSeenTimestamp = 0;
-let wroteWelcomeMessages = false;
 let messageElements = new Map();
 
 function join() {
@@ -370,15 +371,7 @@ function join() {
         }
       }
     } else if (data.ready) {
-      if (!wroteWelcomeMessages) {
-        wroteWelcomeMessages = true;
-        addChatMessage(null,
-            "* This is a demo app built with Cloudflare Workers Durable Objects.");
-        addChatMessage(null,
-            "* You are authenticated as " + username + ". Chat history is saved.");
-        addChatMessage(null,
-            "* Welcome to " + roomname + ". Say hi!");
-      }
+      // Nothing
     } else if (data.type === "translation") {
       let el = messageElements.get(data.timestamp);
       if (el) {
