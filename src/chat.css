@@ -30,6 +30,8 @@ body {
 
 /* Message bubbles */
 .message {
+  display: flex;
+  flex-direction: column;
   max-width: 75%;
   padding: 10px 14px;
   border-radius: 16px;
@@ -61,31 +63,48 @@ body {
   background: #fff3cd;
   border-color: #ffd54f;
 }
-.message .msg-name {
-  display: block;
+.message .msg-sender {
   font-size: 12px;
   font-weight: 600;
   color: #555;
   margin-bottom: 4px;
 }
-.message.self .msg-name {
+.message.self .msg-sender {
   color: #3a7d0a;
 }
-.message .msg-english {
-  display: block;
-}
-.message .msg-divider {
-  display: block;
-  height: 1px;
-  background: #ddd;
-  margin: 6px 0;
-}
-.message.self .msg-divider {
-  background: #b5d89a;
-}
 .message .msg-japanese {
-  display: block;
   color: #444;
+  border-top: 1px solid #ddd;
+  margin-top: 6px;
+  padding-top: 6px;
+}
+.message.self .msg-japanese {
+  border-top-color: #b5d89a;
+}
+
+/* Footer and likes */
+.msg-footer {
+  display: flex;
+  flex-direction: row;
+  margin-top: 4px;
+}
+.msg-likes {
+}
+.like-btn {
+  background: none;
+  border: none;
+  font-size: 13px;
+  color: #888;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.like-btn:hover {
+  color: #e53935;
+  background: #fce4ec;
+}
+.like-btn.liked {
+  color: #e53935;
 }
 
 /* System messages */

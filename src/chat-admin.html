@@ -435,25 +435,36 @@ function join() {
       if (el) {
         let enEl = el.querySelector(".msg-english");
         let jaEl = el.querySelector(".msg-japanese");
-        let divider = el.querySelector(".msg-divider");
         if (data.lang === "JA") {
           if (!jaEl) {
-            if (!divider) { divider = document.createElement("span"); divider.className = "msg-divider"; el.appendChild(divider); }
-            jaEl = document.createElement("span"); jaEl.className = "msg-japanese"; el.appendChild(jaEl);
+            let footer = el.querySelector(".msg-footer");
+            jaEl = document.createElement("div"); jaEl.className = "msg-japanese"; el.insertBefore(jaEl, footer);
           }
           jaEl.textContent = data.text;
         } else if (data.lang === "EN") {
           let originalText = enEl.textContent;
           enEl.textContent = data.text;
-          if (!divider) { divider = document.createElement("span"); divider.className = "msg-divider"; el.appendChild(divider); }
-          if (!jaEl) { jaEl = document.createElement("span"); jaEl.className = "msg-japanese"; el.appendChild(jaEl); }
+          if (!jaEl) {
+            let footer = el.querySelector(".msg-footer");
+            jaEl = document.createElement("div"); jaEl.className = "msg-japanese"; el.insertBefore(jaEl, footer);
+          }
           jaEl.textContent = originalText;
         }
         if (isAtBottom) chatlog.scrollBy(0, 1e8);
       }
+    } else if (data.type === "like") {
+      let el = messageElements.get(data.timestamp);
+      if (el) {
+        let btn = el.querySelector(".like-btn");
+        if (btn) {
+          let liked = data.likedBy && data.likedBy.includes(userEmail);
+          btn.textContent = (liked ? "\u2665" : "\u2661") + (data.count ? " " + data.count : "");
+          btn.classList.toggle("liked", liked);
+        }
+      }
     } else {
       if (data.timestamp > lastSeenTimestamp) {
-        addChatMessage(data.name, data.message, data.timestamp, data.translation, data.admin);
+        addChatMessage(data.name, data.message, data.timestamp, data.translation, data.admin, data.likes);
         lastSeenTimestamp = data.timestamp;
       }
     }
@@ -469,7 +480,7 @@ function join() {
   });
 }
 
-function addChatMessage(name, text, timestamp, translation, admin) {
+function addChatMessage(name, text, timestamp, translation, admin, likes) {
   if (!name) {
     let div = document.createElement("div");
     div.className = "system-msg";
@@ -483,10 +494,10 @@ function addChatMessage(name, text, timestamp, translation, admin) {
   let div = document.createElement("div");
   div.className = "message " + (isSelf ? "self" : "other") + (admin ? " admin" : "");
 
-  let nameSpan = document.createElement("span");
-  nameSpan.className = "msg-name";
-  nameSpan.textContent = name;
-  div.appendChild(nameSpan);
+  let senderDiv = document.createElement("div");
+  senderDiv.className = "msg-sender";
+  senderDiv.textContent = name;
+  div.appendChild(senderDiv);
 
   let english = text;
   let japanese = "";
@@ -500,25 +511,41 @@ function addChatMessage(name, text, timestamp, translation, admin) {
     }
   }
 
-  let enSpan = document.createElement("span");
-  enSpan.className = "msg-english";
-  enSpan.textContent = english;
-  div.appendChild(enSpan);
+  let enDiv = document.createElement("div");
+  enDiv.className = "msg-english";
+  enDiv.textContent = english;
+  div.appendChild(enDiv);
 
   if (japanese) {
-    let divider = document.createElement("span");
-    divider.className = "msg-divider";
-    div.appendChild(divider);
-
-    let jaSpan = document.createElement("span");
-    jaSpan.className = "msg-japanese";
-    jaSpan.textContent = japanese;
-    div.appendChild(jaSpan);
+    let jaDiv = document.createElement("div");
+    jaDiv.className = "msg-japanese";
+    jaDiv.textContent = japanese;
+    div.appendChild(jaDiv);
   }
 
+  // Footer with likes
+  let footer = document.createElement("div");
+  footer.className = "msg-footer";
   if (timestamp) {
+    let likesDiv = document.createElement("div");
+    likesDiv.className = "msg-likes";
+    let btn = document.createElement("button");
+    btn.className = "like-btn";
+    btn.type = "button";
+    let liked = likes && likes.includes(userEmail);
+    let count = likes ? likes.length : 0;
+    btn.textContent = (liked ? "\u2665" : "\u2661") + (count ? " " + count : "");
+    if (liked) btn.classList.add("liked");
+    btn.addEventListener("click", () => {
+      if (currentWebSocket && currentWebSocket.readyState === WebSocket.OPEN) {
+        currentWebSocket.send(JSON.stringify({type: "like", timestamp: timestamp}));
+      }
+    });
+    likesDiv.appendChild(btn);
+    footer.appendChild(likesDiv);
     messageElements.set(timestamp, div);
   }
+  div.appendChild(footer);
 
   chatlog.appendChild(div);
   if (isAtBottom) {

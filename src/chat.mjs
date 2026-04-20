@@ -679,6 +679,12 @@ export class ChatRoom {
 
       let data = JSON.parse(msg);
 
+      // Route by message type
+      if (data.type === "like") {
+        await this.handleLike(webSocket, session, data);
+        return;
+      }
+
       // Name is set server-side at connection time, so all messages are chat messages.
       // Construct sanitized message for storage and broadcast.
       data = { name: session.name, email: session.email, admin: session.admin, message: "" + data.message };
@@ -758,6 +764,31 @@ export class ChatRoom {
     } catch {
       // Translation failure is non-fatal
     }
+  }
+
+  // handleLike() toggles a like on a message for the given user.
+  async handleLike(webSocket, session, data) {
+    let ts = Number(data.timestamp);
+    if (!ts) {
+      webSocket.send(JSON.stringify({error: "Invalid like target."}));
+      return;
+    }
+    let key = new Date(ts).toISOString();
+    let raw = await this.storage.get(key);
+    if (!raw) {
+      webSocket.send(JSON.stringify({error: "Message not found."}));
+      return;
+    }
+    let msg = JSON.parse(raw);
+    msg.likes = msg.likes || [];
+    let idx = msg.likes.indexOf(session.email);
+    if (idx === -1) {
+      msg.likes.push(session.email);
+    } else {
+      msg.likes.splice(idx, 1);
+    }
+    await this.storage.put(key, JSON.stringify(msg));
+    this.broadcast({type: "like", timestamp: ts, count: msg.likes.length, likedBy: msg.likes});
   }
 
   // broadcast() broadcasts a message to all clients.
