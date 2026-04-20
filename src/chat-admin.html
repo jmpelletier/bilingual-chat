@@ -453,7 +453,7 @@ function join() {
       }
     } else {
       if (data.timestamp > lastSeenTimestamp) {
-        addChatMessage(data.name, data.message, data.timestamp, data.translation);
+        addChatMessage(data.name, data.message, data.timestamp, data.translation, data.admin);
         lastSeenTimestamp = data.timestamp;
       }
     }
@@ -469,7 +469,7 @@ function join() {
   });
 }
 
-function addChatMessage(name, text, timestamp, translation) {
+function addChatMessage(name, text, timestamp, translation, admin) {
   if (!name) {
     let div = document.createElement("div");
     div.className = "system-msg";
@@ -481,7 +481,7 @@ function addChatMessage(name, text, timestamp, translation) {
 
   let isSelf = (name === username);
   let div = document.createElement("div");
-  div.className = "message " + (isSelf ? "self" : "other");
+  div.className = "message " + (isSelf ? "self" : "other") + (admin ? " admin" : "");
 
   let nameSpan = document.createElement("span");
   nameSpan.className = "msg-name";

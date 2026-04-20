@@ -50,6 +50,17 @@ body {
   border: 1px solid #c5e1a5;
   border-bottom-right-radius: 4px;
 }
+.message.admin {
+  background: #fff8e1;
+  border-color: #ffe0b2;
+  font-size: 18px;
+  max-width: 100%;
+  border-bottom-left-radius: 16px;
+}
+.message.admin.self {
+  background: #fff3cd;
+  border-color: #ffd54f;
+}
 .message .msg-name {
   display: block;
   font-size: 12px;

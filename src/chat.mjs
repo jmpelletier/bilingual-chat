@@ -428,6 +428,7 @@ async function handleApiRequest(path, request, env) {
         let modifiedHeaders = new Headers(request.headers);
         modifiedHeaders.set("X-Auth-DisplayName", session.displayName);
         modifiedHeaders.set("X-Auth-Email", session.email);
+        modifiedHeaders.set("X-Auth-Admin", session.admin ? "1" : "0");
         let modifiedRequest = new Request(newUrl, {
           headers: modifiedHeaders,
           method: request.method,
@@ -517,6 +518,7 @@ export class ChatRoom {
           // Get the authenticated user info passed by the Worker.
           let displayName = request.headers.get("X-Auth-DisplayName");
           let email = request.headers.get("X-Auth-Email") || "";
+          let admin = request.headers.get("X-Auth-Admin") === "1";
 
           // To accept the WebSocket request, we create a WebSocketPair (which is like a socketpair,
           // i.e. two WebSockets that talk to each other), we return one end of the pair in the
@@ -526,7 +528,7 @@ export class ChatRoom {
           let pair = new WebSocketPair();
 
           // We're going to take pair[1] as our end, and return pair[0] to the client.
-          await this.handleSession(pair[1], ip, displayName, email);
+          await this.handleSession(pair[1], ip, displayName, email, admin);
 
           // Now we return the other end of the pair to the client.
           return new Response(null, { status: 101, webSocket: pair[0] });
@@ -615,7 +617,7 @@ export class ChatRoom {
   }
 
   // handleSession() implements our WebSocket-based chat protocol.
-  async handleSession(webSocket, ip, displayName, email) {
+  async handleSession(webSocket, ip, displayName, email, admin) {
     // Accept our end of the WebSocket. This tells the runtime that we'll be terminating the
     // WebSocket in JavaScript, not sending it elsewhere.
     this.state.acceptWebSocket(webSocket);
@@ -628,9 +630,9 @@ export class ChatRoom {
 
     // Create our session and add it to the sessions map.
     // The display name is set server-side from the authenticated session.
-    let session = { limiterId, limiter, blockedMessages: [], name: displayName, email };
-    // attach limiterId, name, and email to the webSocket so it survives hibernation
-    webSocket.serializeAttachment({ ...webSocket.deserializeAttachment(), limiterId: limiterId.toString(), name: displayName, email });
+    let session = { limiterId, limiter, blockedMessages: [], name: displayName, email, admin };
+    // attach limiterId, name, email, and admin to the webSocket so it survives hibernation
+    webSocket.serializeAttachment({ ...webSocket.deserializeAttachment(), limiterId: limiterId.toString(), name: displayName, email, admin });
     this.sessions.set(webSocket, session);
 
     // Queue "join" messages for all online users, to populate the client's roster.
@@ -679,7 +681,7 @@ export class ChatRoom {
 
       // Name is set server-side at connection time, so all messages are chat messages.
       // Construct sanitized message for storage and broadcast.
-      data = { name: session.name, email: session.email, message: "" + data.message };
+      data = { name: session.name, email: session.email, admin: session.admin, message: "" + data.message };
 
       // Block people from sending overly long messages. This is also enforced on the client,
       // so to trigger this the user must be bypassing the client code.
