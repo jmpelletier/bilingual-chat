@@ -15,7 +15,7 @@ body {
 #chatlog {
   position: fixed;
   top: 0;
-  bottom: 48px;
+  bottom: 52px;
   left: 0;
   right: 200px;
   overflow-y: auto;
@@ -72,6 +72,10 @@ body {
 .message.self .msg-sender {
   color: #3a7d0a;
 }
+.message .msg-english,
+.message .msg-japanese {
+  white-space: pre-wrap;
+}
 .message .msg-japanese {
   color: #444;
   border-top: 1px solid #ddd;
@@ -124,7 +128,7 @@ body {
   position: fixed;
   right: 0;
   top: 0;
-  bottom: 48px;
+  bottom: 52px;
   width: 200px;
   padding: 12px;
   font-size: 13px;
@@ -150,18 +154,48 @@ body {
 /* ═══════════════════════════════════════════════════════ */
 /* Input bar                                              */
 /* ═══════════════════════════════════════════════════════ */
-#chat-input {
+#input-bar {
   position: fixed;
-  width: 100%;
-  height: 48px;
   bottom: 0;
   left: 0;
-  border: none;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
   border-top: 1px solid #e0e0e0;
-  padding: 0 16px 0 16px;
-  font-size: 15px;
-  outline: none;
   background: #fff;
+  padding: 8px 12px;
+  gap: 8px;
+}
+#chat-input {
+  flex: 1;
+  min-height: 36px;
+  max-height: 120px;
+  border: 1px solid #ddd;
+  border-radius: 18px;
+  padding: 8px 14px;
+  font-size: 15px;
+  font-family: inherit;
+  line-height: 1.4;
+  outline: none;
+  resize: none;
+  overflow-y: auto;
+}
+#chat-input:focus {
+  border-color: #4a9;
+}
+#send-btn {
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 18px;
+  background: #4a9;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+#send-btn:hover {
+  background: #3a8;
 }
 #chatroom::before {
   display: none;

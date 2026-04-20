@@ -66,7 +66,10 @@
       <div id="roster"></div>
       <button id="rooms-btn" class="toolbar-btn" type="button">Rooms</button>
       <button id="logout-btn" class="toolbar-btn" type="button">Logout</button>
-      <input id="chat-input" placeholder="Type a message...">
+      <div id="input-bar">
+        <textarea id="chat-input" placeholder="Type a message..." rows="1"></textarea>
+        <button id="send-btn" type="button">Send</button>
+      </div>
     </form>
   </body>
 
@@ -269,43 +272,28 @@ function startChat() {
 
   document.location.hash = "#" + encodeURIComponent(roomname);
 
-  chatInput.addEventListener("keydown", event => {
-    if (event.keyCode == 38) {
-      chatlog.scrollBy(0, -50);
-    } else if (event.keyCode == 40) {
-      chatlog.scrollBy(0, 50);
-    } else if (event.keyCode == 33) {
-      chatlog.scrollBy(0, -chatlog.clientHeight + 50);
-    } else if (event.keyCode == 34) {
-      chatlog.scrollBy(0, chatlog.clientHeight - 50);
-    }
-  });
+  function sendMessage() {
+    let msg = chatInput.value.trim();
+    if (!msg || !currentWebSocket) return;
+    currentWebSocket.send(JSON.stringify({message: msg}));
+    chatInput.value = "";
+    chatInput.style.height = "auto";
+    chatlog.scrollBy(0, 1e8);
+  }
 
-  chatroom.addEventListener("submit", event => {
-    event.preventDefault();
-
-    if (currentWebSocket) {
-      currentWebSocket.send(JSON.stringify({message: chatInput.value}));
-      chatInput.value = "";
-      chatlog.scrollBy(0, 1e8);
-    }
-  });
+  document.querySelector("#send-btn").addEventListener("click", sendMessage);
 
   chatInput.addEventListener("input", event => {
     if (event.currentTarget.value.length > 256) {
       event.currentTarget.value = event.currentTarget.value.slice(0, 256);
     }
+    // Auto-resize textarea
+    chatInput.style.height = "auto";
+    chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + "px";
   });
 
   chatlog.addEventListener("scroll", event => {
     isAtBottom = chatlog.scrollTop + chatlog.clientHeight >= chatlog.scrollHeight;
-  });
-
-  chatInput.focus();
-  document.body.addEventListener("click", event => {
-    if (window.getSelection().toString() == "") {
-      chatInput.focus();
-    }
   });
 
   if('visualViewport' in window) {
