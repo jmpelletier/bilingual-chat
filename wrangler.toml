@@ -14,7 +14,7 @@ bindings = [
 
 [[rules]]
 type = "Data"
-globs = ["**/*.html"]
+globs = ["**/*.html", "**/*.css"]
 fallthrough = false
 
 # Indicate that you want the ChatRoom and RateLimiter classes to be callable as Durable Objects.

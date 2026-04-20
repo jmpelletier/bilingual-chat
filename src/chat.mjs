@@ -61,6 +61,7 @@
 // KV to serve assets.)
 import HTML from "./chat.html";
 import ADMIN_HTML from "./chat-admin.html";
+import CSS from "./chat.css";
 import ExcelJS from "exceljs";
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
@@ -107,6 +108,9 @@ export default {
       }
 
       switch (path[0]) {
+        case "chat.css": {
+          return new Response(CSS, { headers: { "Content-Type": "text/css;charset=UTF-8", "Cache-Control": "public, max-age=3600" } });
+        }
         case "admin": {
           // Serve admin chat page (requires admin session).
           let session = await validateSession(request, env);

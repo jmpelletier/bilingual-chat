@@ -12,257 +12,31 @@
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <!--===================================================================================-->
-<!-- Inline style to avoid an extra round trip before the page can render. -->
+<!-- Shared stylesheet -->
+<link rel="stylesheet" href="/chat.css">
+<!-- Page-specific styles -->
 <style type="text/css">
-* {
-  box-sizing: border-box;
-}
-body {
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-#chatlog {
+.toolbar-btn {
   position: fixed;
   top: 0;
-  bottom: 32px;
-  left: 0;
-  right: 200px;
-  overflow-y: auto;
-  padding: 8px;
-  overflow-wrap: break-word;
-}
-#chatlog span.username {
-  font-weight: bold;
-}
-#chatlog .translation {
-  display: block;
-  font-size: 0.85em;
-  color: #666;
-  margin-top: 2px;
-  padding-left: 8px;
-  border-left: 2px solid #ddd;
-}
-#spacer {
-  height: calc(100vh - 32px - 5em);
-}
-
-#roster {
-  font-weight: bold;
-  padding: 8px;
-}
-
-p {
-  margin-top: 0;
-  margin-bottom: 8px;
-}
-p:last-of-type {
-  margin: 0;
-}
-
-#roster {
-  position: fixed;
-  right: 0;
-  top: 0;
-  bottom: 32px;
-  width: 200px;
-  border-left: none;
-}
-
-::-webkit-scrollbar {
-  display: none;
-}
-
-@media(max-width:600px) {
-  #roster { display: none; }
-  #chatlog { right: 0; }
-}
-
-#chat-input {
-  position: fixed;
-  width: 100%;
-  height: 32px;
-  bottom: 0;
-  left: 0;
-  border: none;
-  border-top: none;
-  padding-left: 32px;
-  outline: none;
-}
-#chatroom::before {
   z-index: 1;
-  display: block;
-  content: ">";
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  width: 32px;
-  height: 32px;
-  line-height: 32px;
-  text-align: center;
-  font-weight: bold;
-  color: #888;
-  -webkit-text-stroke-width: 2px;
-}
-
-#name-form {
-  position: fixed;
-  z-index: 3;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background-color: white;
-}
-
-#login-prompt {
-  position: fixed;
-  z-index: 4;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background-color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  font-size: 150%;
+  padding: 8px 14px;
+  border: none;
+  border-bottom: 1px solid #e0e0e0;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
   color: #555;
 }
-
-#name-input {
-  position: fixed;
-  font-size: 200%;
-  top: calc(50% - 1em);
-  left: calc(50% - 8em);
-  width: 16em;
-  height: 2em;
-  margin: 0;
-  text-align: center;
-  border: 1px solid #bbb;
-}
-
-#name-form p {
-  position: fixed;
-  top: calc(50% + 3em);
-  width: 100%;
-  text-align: center;
-}
-
-#room-form {
-  position: fixed;
-  z-index: 2;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background-color: white;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding-top: 10vh;
-  overflow-y: auto;
-}
-
-#room-form h2 {
-  margin: 0 0 16px 0;
-  font-size: 150%;
-}
-
-#room-list {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 16px 0;
-  width: 20em;
-  max-width: 90vw;
-}
-
-#room-list li {
-  padding: 12px 16px;
-  margin-bottom: 4px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 120%;
-}
-
-#room-list li:hover {
-  background-color: #f0f0f0;
-}
-
-#room-list .empty {
-  color: #999;
-  cursor: default;
-  text-align: center;
-  font-style: italic;
-}
-
-#room-list .empty:hover {
-  background-color: transparent;
-}
-
-#create-room-section {
-  display: flex;
-  gap: 8px;
-  width: 20em;
-  max-width: 90vw;
-}
-
-#create-room-input {
-  flex: 1;
-  font-size: 100%;
-  padding: 8px;
-  border: 1px solid #bbb;
-}
-
-#create-room-btn {
-  font-size: 100%;
-  padding: 8px 16px;
-  border: 1px solid #bbb;
-  background-color: #eee;
-  cursor: pointer;
-}
-
-@media(max-width:660px) {
-  #name-input { font-size: 150%; }
-  #name-form p { font-size: 75%; }
-  #login-prompt { font-size: 120%; }
-}
-@media(max-width:500px) {
-  #name-input { font-size: 100%; }
-  #name-form p { font-size: 50%; }
-  #login-prompt { font-size: 100%; }
-}
-
-#rooms-btn {
-  position: fixed;
-  top: 4px;
-  right: 274px;
-  z-index: 1;
-  padding: 4px 12px;
-  border: 1px solid #ccc;
-  background: #f5f5f5;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-#logout-btn {
-  position: fixed;
-  top: 4px;
-  right: 204px;
-  z-index: 1;
-  padding: 4px 12px;
-  border: 1px solid #ccc;
-  background: #f5f5f5;
-  cursor: pointer;
-  font-size: 12px;
-}
+.toolbar-btn:hover { background: #f5f5f5; }
+#rooms-btn { right: 70px; border-left: 1px solid #e0e0e0; }
+#logout-btn { right: 0; border-left: 1px solid #e0e0e0; }
 
 @media(max-width:600px) {
-  #rooms-btn { right: 74px; }
-  #logout-btn { right: 4px; }
+  #rooms-btn { right: 70px; }
+  #logout-btn { right: 0; }
 }
-
 </style>
 
 <!--===================================================================================-->
@@ -290,9 +64,9 @@ p:last-of-type {
         <div id="spacer"></div>
       </div>
       <div id="roster"></div>
-      <button id="rooms-btn" type="button">Rooms</button>
-      <button id="logout-btn" type="button">Logout</button>
-      <input id="chat-input">
+      <button id="rooms-btn" class="toolbar-btn" type="button">Rooms</button>
+      <button id="logout-btn" class="toolbar-btn" type="button">Logout</button>
+      <input id="chat-input" placeholder="Type a message...">
     </form>
   </body>
 
@@ -633,13 +407,28 @@ function join() {
     } else if (data.type === "translation") {
       let el = messageElements.get(data.timestamp);
       if (el) {
-        let span = el.querySelector(".translation");
-        if (!span) {
-          span = document.createElement("span");
-          span.className = "translation";
-          el.appendChild(span);
+        // data.lang is what language the translation is IN
+        // "JA" means translated to Japanese (original was English)
+        // "EN" means translated to English (original was Japanese)
+        let enEl = el.querySelector(".msg-english");
+        let jaEl = el.querySelector(".msg-japanese");
+        let divider = el.querySelector(".msg-divider");
+        if (data.lang === "JA") {
+          // Translation is Japanese, original (already in english slot) stays
+          if (!jaEl) {
+            if (!divider) { divider = document.createElement("span"); divider.className = "msg-divider"; el.appendChild(divider); }
+            jaEl = document.createElement("span"); jaEl.className = "msg-japanese"; el.appendChild(jaEl);
+          }
+          jaEl.textContent = data.text;
+        } else if (data.lang === "EN") {
+          // Translation is English; original was Japanese (currently in english slot)
+          // Move original to japanese slot, put translation in english slot
+          let originalText = enEl.textContent;
+          enEl.textContent = data.text;
+          if (!divider) { divider = document.createElement("span"); divider.className = "msg-divider"; el.appendChild(divider); }
+          if (!jaEl) { jaEl = document.createElement("span"); jaEl.className = "msg-japanese"; el.appendChild(jaEl); }
+          jaEl.textContent = originalText;
         }
-        span.textContent = data.text;
         if (isAtBottom) chatlog.scrollBy(0, 1e8);
       }
     } else {
@@ -661,27 +450,61 @@ function join() {
 }
 
 function addChatMessage(name, text, timestamp, translation) {
-  let p = document.createElement("p");
-  if (name) {
-    let tag = document.createElement("span");
-    tag.className = "username";
-    tag.innerText = name + ": ";
-    p.appendChild(tag);
+  if (!name) {
+    // System message
+    let div = document.createElement("div");
+    div.className = "system-msg";
+    div.textContent = text;
+    chatlog.appendChild(div);
+    if (isAtBottom) chatlog.scrollBy(0, 1e8);
+    return;
   }
-  p.appendChild(document.createTextNode(text));
 
+  let isSelf = (name === username);
+  let div = document.createElement("div");
+  div.className = "message " + (isSelf ? "self" : "other");
+
+  let nameSpan = document.createElement("span");
+  nameSpan.className = "msg-name";
+  nameSpan.textContent = name;
+  div.appendChild(nameSpan);
+
+  // Determine English and Japanese text
+  let english = text;
+  let japanese = "";
   if (translation) {
-    let span = document.createElement("span");
-    span.className = "translation";
-    span.textContent = translation.text;
-    p.appendChild(span);
+    if (translation.lang === "JA") {
+      // Original was English, translation is Japanese
+      english = text;
+      japanese = translation.text;
+    } else if (translation.lang === "EN") {
+      // Original was Japanese, translation is English
+      english = translation.text;
+      japanese = text;
+    }
+  }
+
+  let enSpan = document.createElement("span");
+  enSpan.className = "msg-english";
+  enSpan.textContent = english;
+  div.appendChild(enSpan);
+
+  if (japanese) {
+    let divider = document.createElement("span");
+    divider.className = "msg-divider";
+    div.appendChild(divider);
+
+    let jaSpan = document.createElement("span");
+    jaSpan.className = "msg-japanese";
+    jaSpan.textContent = japanese;
+    div.appendChild(jaSpan);
   }
 
   if (timestamp) {
-    messageElements.set(timestamp, p);
+    messageElements.set(timestamp, div);
   }
 
-  chatlog.appendChild(p);
+  chatlog.appendChild(div);
   if (isAtBottom) {
     chatlog.scrollBy(0, 1e8);
   }
