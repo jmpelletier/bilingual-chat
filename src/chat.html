@@ -34,6 +34,14 @@ body {
 #chatlog span.username {
   font-weight: bold;
 }
+#chatlog .translation {
+  display: block;
+  font-size: 0.85em;
+  color: #666;
+  margin-top: 2px;
+  padding-left: 8px;
+  border-left: 2px solid #ddd;
+}
 #spacer {
   height: calc(100vh - 32px - 5em);
 }
@@ -564,6 +572,7 @@ function startChat() {
 
 let lastSeenTimestamp = 0;
 let wroteWelcomeMessages = false;
+let messageElements = new Map();
 
 function join() {
   const wss = document.location.protocol === "http:" ? "ws://" : "wss://";
@@ -621,9 +630,21 @@ function join() {
         addChatMessage(null,
             "* Welcome to " + roomname + ". Say hi!");
       }
+    } else if (data.type === "translation") {
+      let el = messageElements.get(data.timestamp);
+      if (el) {
+        let span = el.querySelector(".translation");
+        if (!span) {
+          span = document.createElement("span");
+          span.className = "translation";
+          el.appendChild(span);
+        }
+        span.textContent = data.text;
+        if (isAtBottom) chatlog.scrollBy(0, 1e8);
+      }
     } else {
       if (data.timestamp > lastSeenTimestamp) {
-        addChatMessage(data.name, data.message);
+        addChatMessage(data.name, data.message, data.timestamp, data.translation);
         lastSeenTimestamp = data.timestamp;
       }
     }
@@ -639,7 +660,7 @@ function join() {
   });
 }
 
-function addChatMessage(name, text) {
+function addChatMessage(name, text, timestamp, translation) {
   let p = document.createElement("p");
   if (name) {
     let tag = document.createElement("span");
@@ -648,6 +669,17 @@ function addChatMessage(name, text) {
     p.appendChild(tag);
   }
   p.appendChild(document.createTextNode(text));
+
+  if (translation) {
+    let span = document.createElement("span");
+    span.className = "translation";
+    span.textContent = translation.text;
+    p.appendChild(span);
+  }
+
+  if (timestamp) {
+    messageElements.set(timestamp, p);
+  }
 
   chatlog.appendChild(p);
   if (isAtBottom) {

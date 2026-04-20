@@ -178,6 +178,29 @@ function sessionCookie(token, maxAgeSecs) {
   return `session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAgeSecs}`;
 }
 
+// Helper: call DeepL Free API to translate text
+async function translateText(text, targetLang, apiKey) {
+  try {
+    let resp = await fetch("https://api-free.deepl.com/v2/translate", {
+      method: "POST",
+      headers: {
+        "Authorization": `DeepL-Auth-Key ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text: [text],
+        target_lang: targetLang,
+      }),
+    });
+    if (!resp.ok) return null;
+    let data = await resp.json();
+    let t = data.translations[0];
+    return { translatedText: t.text, detectedSourceLang: t.detected_source_language };
+  } catch {
+    return null;
+  }
+}
+
 // Helper: validate session by calling AuthSession DO, returns {email, displayName} or null
 async function validateSession(request, env) {
   let token = getSessionToken(request);
@@ -564,6 +587,9 @@ export class ChatRoom {
       // Save message.
       let key = new Date(data.timestamp).toISOString();
       await this.storage.put(key, dataStr);
+
+      // Translate asynchronously — don't block the sender
+      this.translateAndBroadcast(data, key);
     } catch (err) {
       // Report any exceptions directly back to the client. As with our handleErrors() this
       // probably isn't what you'd want to do in production, but it's convenient when testing.
@@ -588,6 +614,34 @@ export class ChatRoom {
 
   async webSocketError(webSocket, error) {
     this.closeOrErrorHandler(webSocket)
+  }
+
+  // translateAndBroadcast() translates a message and broadcasts the translation to all clients.
+  async translateAndBroadcast(data, key) {
+    try {
+      // First try translating to JA; DeepL will tell us the detected source language.
+      let result = await translateText(data.message, "JA", this.env.DEEPL_API_KEY);
+      if (!result) return;
+
+      let targetLang = "JA";
+      // If the source was already Japanese, translate to English instead.
+      if (result.detectedSourceLang === "JA") {
+        result = await translateText(data.message, "EN", this.env.DEEPL_API_KEY);
+        if (!result) return;
+        targetLang = "EN";
+      }
+
+      let translation = { text: result.translatedText, lang: targetLang };
+
+      // Update stored message with translation
+      let updated = { ...data, translation };
+      await this.storage.put(key, JSON.stringify(updated));
+
+      // Broadcast translation update to all connected clients
+      this.broadcast({ type: "translation", timestamp: data.timestamp, text: translation.text, lang: translation.lang });
+    } catch {
+      // Translation failure is non-fatal
+    }
   }
 
   // broadcast() broadcasts a message to all clients.
