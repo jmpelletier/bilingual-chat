@@ -59,10 +59,24 @@
 // serve our app's static asset without relying on any separate storage. (However, the space
 // available for assets served this way is very limited; larger sites should continue to use Workers
 // KV to serve assets.)
-import HTML from "./chat.html";
-import ADMIN_HTML from "./chat-admin.html";
-import CSS from "./chat.css";
+import HTML_RAW from "./chat.html";
+import ADMIN_HTML_RAW from "./chat-admin.html";
+import CSS_RAW from "./chat.css";
+
+const decoder = new TextDecoder();
+const HTML = decoder.decode(HTML_RAW);
+const ADMIN_HTML = decoder.decode(ADMIN_HTML_RAW);
+const CSS = decoder.decode(CSS_RAW);
 import ExcelJS from "exceljs";
+
+// Compute a short content hash for CSS cache-busting
+async function computeCssHash() {
+  let buf = await crypto.subtle.digest("SHA-1", CSS_RAW);
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 8);
+}
+const cssHashPromise = computeCssHash();
+let cssHash = "";
+cssHashPromise.then(h => { cssHash = h; });
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
 // try/catch and return errors to the client. You probably wouldn't want to use this in production
@@ -104,12 +118,14 @@ export default {
 
       if (!path[0]) {
         // Serve our HTML at the root path.
-        return new Response(HTML, {headers: {"Content-Type": "text/html;charset=UTF-8"}});
+        if (!cssHash) cssHash = await cssHashPromise;
+        let html = HTML.replace('/chat.css"', '/chat.css?v=' + cssHash + '"');
+        return new Response(html, {headers: {"Content-Type": "text/html;charset=UTF-8"}});
       }
 
       switch (path[0]) {
         case "chat.css": {
-          return new Response(CSS, { headers: { "Content-Type": "text/css;charset=UTF-8", "Cache-Control": "public, max-age=3600" } });
+          return new Response(CSS, { headers: { "Content-Type": "text/css;charset=UTF-8", "Cache-Control": "public, max-age=31536000, immutable" } });
         }
         case "admin": {
           // Serve admin chat page (requires admin session).
@@ -117,7 +133,9 @@ export default {
           if (!session || !session.admin) {
             return new Response(null, { status: 302, headers: { "Location": "/" } });
           }
-          return new Response(ADMIN_HTML, {headers: {"Content-Type": "text/html;charset=UTF-8"}});
+          if (!cssHash) cssHash = await cssHashPromise;
+          let adminHtml = ADMIN_HTML.replace('/chat.css"', '/chat.css?v=' + cssHash + '"');
+          return new Response(adminHtml, {headers: {"Content-Type": "text/html;charset=UTF-8"}});
         }
         case "login": {
           // Token-based login: GET /login?token=<token>
