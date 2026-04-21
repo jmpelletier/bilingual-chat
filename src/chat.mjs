@@ -396,6 +396,11 @@ async function handleApiRequest(path, request, env) {
             status: 401, headers: { "Content-Type": "application/json" }
           });
         }
+        if (!session.admin) {
+          return new Response(JSON.stringify({ error: "Only admins can create rooms." }), {
+            status: 403, headers: { "Content-Type": "application/json" }
+          });
+        }
         return registry.fetch(new Request("https://dummy/add", {
           method: "POST",
           body: request.body,

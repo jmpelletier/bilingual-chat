@@ -70,6 +70,7 @@ let nameForm = document.querySelector("#name-form");
 let nameInput = document.querySelector("#name-input");
 let roomForm = document.querySelector("#room-form");
 let roomList = document.querySelector("#room-list");
+let createRoomSection = document.querySelector("#create-room-section");
 let createRoomInput = document.querySelector("#create-room-input");
 let createRoomBtn = document.querySelector("#create-room-btn");
 let chatroom = document.querySelector("#chatroom");
@@ -86,6 +87,7 @@ let isAtBottom = true;
 let username;  // display name
 let userEmail;
 let roomname;
+let isAdminUser = false;
 
 let hostname = window.location.host;
 if (hostname == "") {
@@ -102,6 +104,7 @@ async function checkSession() {
     if (resp.ok) {
       let data = await resp.json();
       userEmail = data.email;
+      isAdminUser = !!data.admin;
       if (data.displayName) {
         username = data.displayName;
         loginPrompt.remove();
@@ -170,6 +173,7 @@ function startRoomChooser() {
   roomForm.style.display = "";
   roomsBtn.style.display = "none";
   exportBtn.style.display = "none";
+  createRoomSection.style.display = isAdminUser ? "" : "none";
 
   if (document.location.hash.length > 1) {
     roomname = decodeURIComponent(document.location.hash.slice(1));
