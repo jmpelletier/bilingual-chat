@@ -172,7 +172,7 @@ function startNameChooser() {
 function startRoomChooser() {
   roomForm.style.display = "";
   roomsBtn.style.display = "none";
-  exportBtn.style.display = "none";
+  exportBtn.style.display = "";
   createRoomSection.style.display = isAdminUser ? "" : "none";
 
   if (document.location.hash.length > 1) {
@@ -186,21 +186,89 @@ function startRoomChooser() {
     try {
       let resp = await fetch("/api/rooms");
       let data = await resp.json();
+      let regularRooms = data.rooms || [];
+      let archivedRooms = data.archivedRooms || [];
       roomList.innerHTML = "";
-      if (data.rooms.length === 0) {
+
+      async function setArchiveState(name, archived) {
+        let resp = await fetch("/api/rooms/archive", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, archived }),
+        });
+        let result = await resp.json();
+        if (!resp.ok) {
+          throw new Error(result.error || "Failed to update room state.");
+        }
+      }
+
+      function appendRoomItem(name, archived) {
+        let li = document.createElement("li");
+        li.className = "room-item";
+
+        let nameSpan = document.createElement("span");
+        nameSpan.className = "room-name";
+        nameSpan.textContent = name;
+        li.appendChild(nameSpan);
+
+        let actions = document.createElement("div");
+        actions.className = "room-actions";
+
+        let archiveBtn = document.createElement("button");
+        archiveBtn.type = "button";
+        archiveBtn.className = "archive-btn";
+        archiveBtn.textContent = archived ? "Unarchive" : "Archive";
+        archiveBtn.addEventListener("click", async (event) => {
+          event.stopPropagation();
+          archiveBtn.disabled = true;
+          try {
+            await setArchiveState(name, !archived);
+            await loadRooms();
+          } catch (err) {
+            alert(err.message || "Failed to update room state.");
+            archiveBtn.disabled = false;
+          }
+        });
+        actions.appendChild(archiveBtn);
+        li.appendChild(actions);
+
+        li.addEventListener("click", () => {
+          roomname = name;
+          startChat();
+        });
+
+        roomList.appendChild(li);
+      }
+
+      if (regularRooms.length === 0 && archivedRooms.length === 0) {
         let li = document.createElement("li");
         li.className = "empty";
         li.textContent = "No rooms yet. Create one below.";
         roomList.appendChild(li);
       } else {
-        for (let name of data.rooms) {
+        let regularTitle = document.createElement("li");
+        regularTitle.className = "room-section-title";
+        regularTitle.textContent = "Rooms";
+        roomList.appendChild(regularTitle);
+
+        for (let name of regularRooms) {
+          appendRoomItem(name, false);
+        }
+
+        let archivedTitle = document.createElement("li");
+        archivedTitle.className = "room-section-title";
+        archivedTitle.textContent = "Archived Rooms";
+        roomList.appendChild(archivedTitle);
+
+        if (archivedRooms.length === 0) {
           let li = document.createElement("li");
-          li.textContent = name;
-          li.addEventListener("click", () => {
-            roomname = name;
-            startChat();
-          });
+          li.className = "empty";
+          li.textContent = "No archived rooms.";
           roomList.appendChild(li);
+        } else {
+          for (let name of archivedRooms) {
+            appendRoomItem(name, true);
+          }
         }
       }
     } catch (err) {
@@ -250,7 +318,9 @@ function startRoomChooser() {
     }
   });
 
-  createRoomInput.focus();
+  if (isAdminUser) {
+    createRoomInput.focus();
+  }
 }
 
 function startChat() {

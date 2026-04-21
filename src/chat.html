@@ -183,21 +183,58 @@ function startRoomChooser() {
     try {
       let resp = await fetch("/api/rooms");
       let data = await resp.json();
+      let regularRooms = data.rooms || [];
+      let archivedRooms = data.archivedRooms || [];
       roomList.innerHTML = "";
-      if (data.rooms.length === 0) {
+
+      if (regularRooms.length === 0 && archivedRooms.length === 0) {
         let li = document.createElement("li");
         li.className = "empty";
         li.textContent = "No rooms yet. Create one below.";
         roomList.appendChild(li);
       } else {
-        for (let name of data.rooms) {
+        let regularTitle = document.createElement("li");
+        regularTitle.className = "room-section-title";
+        regularTitle.textContent = "Rooms";
+        roomList.appendChild(regularTitle);
+
+        for (let name of regularRooms) {
           let li = document.createElement("li");
-          li.textContent = name;
+          li.className = "room-item";
+
+          let nameSpan = document.createElement("span");
+          nameSpan.className = "room-name";
+          nameSpan.textContent = name;
+          li.appendChild(nameSpan);
+
           li.addEventListener("click", () => {
             roomname = name;
             startChat();
           });
           roomList.appendChild(li);
+        }
+
+        if (archivedRooms.length > 0) {
+          let archivedTitle = document.createElement("li");
+          archivedTitle.className = "room-section-title";
+          archivedTitle.textContent = "Archived Rooms";
+          roomList.appendChild(archivedTitle);
+
+          for (let name of archivedRooms) {
+            let li = document.createElement("li");
+            li.className = "room-item";
+
+            let nameSpan = document.createElement("span");
+            nameSpan.className = "room-name";
+            nameSpan.textContent = name;
+            li.appendChild(nameSpan);
+
+            li.addEventListener("click", () => {
+              roomname = name;
+              startChat();
+            });
+            roomList.appendChild(li);
+          }
         }
       }
     } catch (err) {
@@ -247,7 +284,9 @@ function startRoomChooser() {
     }
   });
 
-  createRoomInput.focus();
+  if (isAdminUser) {
+    createRoomInput.focus();
+  }
 }
 
 function startChat() {

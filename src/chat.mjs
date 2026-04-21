@@ -387,15 +387,42 @@ async function handleApiRequest(path, request, env) {
 
       if (request.method === "GET") {
         // GET /api/rooms — list all rooms
-        return registry.fetch(new Request("https://dummy/list"));
-      } else if (request.method === "POST") {
-        // POST /api/rooms — create a new room
         let session = await validateSession(request, env);
         if (!session) {
           return new Response(JSON.stringify({ error: "Not authenticated." }), {
             status: 401, headers: { "Content-Type": "application/json" }
           });
         }
+        let headers = new Headers();
+        headers.set("X-Auth-Admin", session.admin ? "1" : "0");
+        return registry.fetch(new Request("https://dummy/list", { headers }));
+      } else if (request.method === "POST") {
+        let session = await validateSession(request, env);
+        if (!session) {
+          return new Response(JSON.stringify({ error: "Not authenticated." }), {
+            status: 401, headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        if (path[1] === "archive") {
+          // POST /api/rooms/archive — archive/unarchive a room (admin only)
+          if (!session.admin) {
+            return new Response(JSON.stringify({ error: "Only admins can archive rooms." }), {
+              status: 403, headers: { "Content-Type": "application/json" }
+            });
+          }
+          return registry.fetch(new Request("https://dummy/archive", {
+            method: "POST",
+            body: request.body,
+            headers: { "Content-Type": "application/json" }
+          }));
+        }
+
+        if (path[1]) {
+          return new Response("Not found", { status: 404 });
+        }
+
+        // POST /api/rooms — create a new room (admin only)
         if (!session.admin) {
           return new Response(JSON.stringify({ error: "Only admins can create rooms." }), {
             status: 403, headers: { "Content-Type": "application/json" }
@@ -968,14 +995,42 @@ export class RoomRegistry {
     this.storage = state.storage;
   }
 
+  async loadRooms() {
+    // Backwards compatibility: migrate from legacy ["roomName"] to [{name, archived}].
+    let rawRooms = (await this.storage.get("rooms")) || [];
+    let migrated = false;
+    let rooms = rawRooms.map((room) => {
+      if (typeof room === "string") {
+        migrated = true;
+        return { name: room, archived: false };
+      }
+      return {
+        name: room?.name || "",
+        archived: !!room?.archived,
+      };
+    }).filter(room => room.name);
+
+    if (migrated) {
+      await this.storage.put("rooms", rooms);
+    }
+    return rooms;
+  }
+
   async fetch(request) {
     return await handleErrors(request, async () => {
       let url = new URL(request.url);
 
       switch (url.pathname) {
         case "/list": {
-          let rooms = (await this.storage.get("rooms")) || [];
-          return new Response(JSON.stringify({ rooms }), {
+          let rooms = await this.loadRooms();
+          let isAdmin = request.headers.get("X-Auth-Admin") === "1";
+          let activeRooms = rooms.filter(room => !room.archived).map(room => room.name);
+          let archivedRooms = isAdmin ? rooms.filter(room => room.archived).map(room => room.name) : [];
+
+          return new Response(JSON.stringify({
+            rooms: activeRooms,
+            archivedRooms,
+          }), {
             headers: { "Content-Type": "application/json" }
           });
         }
@@ -995,17 +1050,48 @@ export class RoomRegistry {
             });
           }
 
-          let rooms = (await this.storage.get("rooms")) || [];
-          if (rooms.includes(name)) {
+          let rooms = await this.loadRooms();
+          if (rooms.some(room => room.name === name)) {
             return new Response(JSON.stringify({ error: "Room already exists." }), {
               status: 409, headers: { "Content-Type": "application/json" }
             });
           }
 
-          rooms.push(name);
+          rooms.push({ name, archived: false });
           await this.storage.put("rooms", rooms);
 
           return new Response(JSON.stringify({ success: true, name }), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        case "/archive": {
+          let { name, archived } = await request.json();
+          if (!name || typeof name !== "string") {
+            return new Response(JSON.stringify({ error: "Room name is required." }), {
+              status: 400, headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          name = name.trim();
+          if (name.length === 0 || name.length > 32) {
+            return new Response(JSON.stringify({ error: "Room name must be 1-32 characters." }), {
+              status: 400, headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          let rooms = await this.loadRooms();
+          let room = rooms.find(r => r.name === name);
+          if (!room) {
+            return new Response(JSON.stringify({ error: "Room not found." }), {
+              status: 404, headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          room.archived = !!archived;
+          await this.storage.put("rooms", rooms);
+
+          return new Response(JSON.stringify({ success: true, name: room.name, archived: room.archived }), {
             headers: { "Content-Type": "application/json" }
           });
         }

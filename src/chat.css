@@ -150,8 +150,6 @@ body {
   flex-direction: row;
   margin-top: 4px;
 }
-.msg-likes {
-}
 .like-btn {
   background: none;
   border: none;
@@ -359,6 +357,65 @@ body {
 
 #room-list li:hover {
   background-color: #e8f5e9;
+}
+
+#room-list li.room-section-title {
+  margin: 12px 0 6px 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  cursor: default;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+#room-list li.room-section-title:hover {
+  background: transparent;
+}
+
+#room-list li.room-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.room-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.archive-btn {
+  display: inline-block;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #374151;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.archive-btn:hover {
+  background: #e0e7ff;
+}
+
+.archive-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 #room-list .empty {
