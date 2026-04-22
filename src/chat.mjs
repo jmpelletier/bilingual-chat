@@ -1044,8 +1044,8 @@ export class RoomRegistry {
           }
 
           name = name.trim();
-          if (name.length === 0 || name.length > 32) {
-            return new Response(JSON.stringify({ error: "Room name must be 1-32 characters." }), {
+          if (name.length === 0 || name.length > 64) {
+            return new Response(JSON.stringify({ error: "Room name must be 1-64 characters." }), {
               status: 400, headers: { "Content-Type": "application/json" }
             });
           }
@@ -1074,8 +1074,8 @@ export class RoomRegistry {
           }
 
           name = name.trim();
-          if (name.length === 0 || name.length > 32) {
-            return new Response(JSON.stringify({ error: "Room name must be 1-32 characters." }), {
+          if (name.length === 0 || name.length > 64) {
+            return new Response(JSON.stringify({ error: "Room name must be 1-64 characters." }), {
               status: 400, headers: { "Content-Type": "application/json" }
             });
           }

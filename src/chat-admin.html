@@ -35,7 +35,7 @@
       <h2>Choose a room</h2>
       <ul id="room-list"><li class="empty">Loading rooms...</li></ul>
       <div id="create-room-section">
-        <input id="create-room-input" placeholder="new room name" maxlength="32">
+        <input id="create-room-input" placeholder="new room name" maxlength="64">
         <button id="create-room-btn">Create</button>
       </div>
     </div>
@@ -329,7 +329,7 @@ function startChat() {
 
   roomname = roomname.trim();
 
-  if (roomname.length === 0 || roomname.length > 32) {
+  if (roomname.length === 0 || roomname.length > 64) {
     addChatMessage("ERROR", "Invalid room name.");
     return;
   }
