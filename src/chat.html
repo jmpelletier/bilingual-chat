@@ -50,7 +50,6 @@
       <div id="chatlog">
         <div id="spacer"></div>
       </div>
-      <div id="roster"></div>
       <div id="input-bar">
         <textarea id="chat-input" placeholder="Type a message..." rows="1"></textarea>
         <button id="send-btn" type="button">Send</button>
@@ -75,7 +74,6 @@ let createRoomBtn = document.querySelector("#create-room-btn");
 let chatroom = document.querySelector("#chatroom");
 let chatlog = document.querySelector("#chatlog");
 let chatInput = document.querySelector("#chat-input");
-let roster = document.querySelector("#roster");
 let logoutBtn = document.querySelector("#logout-btn");
 let roomsBtn = document.querySelector("#rooms-btn");
 
@@ -379,10 +377,6 @@ function join() {
       rejoined = true;
       currentWebSocket = null;
 
-      while (roster.firstChild) {
-        roster.removeChild(roster.firstChild);
-      }
-
       let timeSinceLastJoin = Date.now() - startTime;
       if (timeSinceLastJoin < 10000) {
         await new Promise(resolve => setTimeout(resolve, 10000 - timeSinceLastJoin));
@@ -403,17 +397,6 @@ function join() {
 
     if (data.error) {
       addChatMessage(null, "* Error: " + data.error);
-    } else if (data.joined) {
-      let p = document.createElement("p");
-      p.innerText = data.joined;
-      roster.appendChild(p);
-    } else if (data.quit) {
-      for (let child of roster.childNodes) {
-        if (child.innerText == data.quit) {
-          roster.removeChild(child);
-          break;
-        }
-      }
     } else if (data.ready) {
       // Write a welcome message
       if (!wroteWelcomeMessages) {
