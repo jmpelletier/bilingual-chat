@@ -599,11 +599,36 @@ function addChatMessage(name, text, timestamp, translation, admin, likes) {
   }
   div.appendChild(footer);
 
+  if (isAdminUser) {
+    div.addEventListener("click", (event) => {
+      // Don't steal clicks from interactive elements inside the bubble.
+      if (event.target.closest("button")) return;
+      let isAlreadyHighlighted = div.classList.contains("highlighted");
+      // Clear any existing highlight.
+      let prev = chatlog.querySelector(".message.highlighted");
+      if (prev) prev.classList.remove("highlighted");
+      if (!isAlreadyHighlighted) {
+        div.classList.add("highlighted");
+        chatlog.classList.add("has-highlight");
+      } else {
+        chatlog.classList.remove("has-highlight");
+      }
+      event.stopPropagation();
+    });
+  }
+
   chatlog.appendChild(div);
   if (isAtBottom) {
     chatlog.scrollBy(0, 1e8);
   }
 }
+
+// Clicking outside any message clears the highlight.
+document.addEventListener("click", () => {
+  let prev = chatlog && chatlog.querySelector(".message.highlighted");
+  if (prev) prev.classList.remove("highlighted");
+  if (chatlog) chatlog.classList.remove("has-highlight");
+});
 
 // Start the auth flow on page load
 checkSession();

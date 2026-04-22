@@ -81,6 +81,31 @@ body {
   flex-direction: column;
   gap: 8px;
 }
+#chatlog::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0);
+  pointer-events: none;
+  transition: background 140ms ease;
+  z-index: 2;
+}
+#chatlog.has-highlight::before {
+  background: rgba(0, 0, 0, 0.25);
+}
+#chatlog.has-highlight .message,
+#chatlog.has-highlight .system-msg {
+  filter: blur(2px) brightness(0.72);
+  transition: filter 140ms ease;
+}
+#chatlog.has-highlight .message.highlighted,
+#chatlog.has-highlight .message.highlighted * {
+  filter: none;
+}
+#chatlog.has-highlight {
+  background-color: #5f5f5f;
+  transition: background-color 140ms ease;
+}
 #spacer {
   flex: 1 0 auto;
 }
@@ -165,6 +190,24 @@ body {
 }
 .like-btn.liked {
   color: #e53935;
+}
+
+/* Highlighted message (admin only) */
+.message.highlighted {
+  outline: 2px solid #e53935;
+  transform: scale(1.3);
+  transform-origin: left;
+  z-index: 10000;
+  box-shadow: 0px 0px 12px 0px rgba(0, 0, 0, 0.5);
+}
+
+.message.self.highlighted {
+  transform-origin: right;
+}
+
+.message.admin.highlighted {
+  transform-origin: center !important;
+  transform: scale(1) !important;
 }
 
 /* System messages */
