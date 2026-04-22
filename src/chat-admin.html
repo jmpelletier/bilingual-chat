@@ -201,6 +201,18 @@ function startRoomChooser() {
         }
       }
 
+      async function deleteRoom(name) {
+        let resp = await fetch("/api/rooms/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        let result = await resp.json();
+        if (!resp.ok) {
+          throw new Error(result.error || "Failed to delete room.");
+        }
+      }
+
       function appendRoomItem(name, archived) {
         let li = document.createElement("li");
         li.className = "room-item";
@@ -229,6 +241,32 @@ function startRoomChooser() {
           }
         });
         actions.appendChild(archiveBtn);
+
+        if (archived) {
+          let deleteBtn = document.createElement("button");
+          deleteBtn.type = "button";
+          deleteBtn.className = "delete-btn";
+          deleteBtn.textContent = "Delete";
+          deleteBtn.addEventListener("click", async (event) => {
+            event.stopPropagation();
+            alert("Warning: deleting this room is permanent and cannot be undone.");
+            if (!confirm(`Permanently delete \"${name}\"?`)) {
+              return;
+            }
+            deleteBtn.disabled = true;
+            archiveBtn.disabled = true;
+            try {
+              await deleteRoom(name);
+              await loadRooms();
+            } catch (err) {
+              alert(err.message || "Failed to delete room.");
+              deleteBtn.disabled = false;
+              archiveBtn.disabled = false;
+            }
+          });
+          actions.appendChild(deleteBtn);
+        }
+
         li.appendChild(actions);
 
         li.addEventListener("click", () => {

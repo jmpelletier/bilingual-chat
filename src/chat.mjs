@@ -418,6 +418,46 @@ async function handleApiRequest(path, request, env) {
           }));
         }
 
+        if (path[1] === "delete") {
+          // POST /api/rooms/delete — permanently delete an archived room (admin only)
+          if (!session.admin) {
+            return new Response(JSON.stringify({ error: "Only admins can delete rooms." }), {
+              status: 403, headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          let payload;
+          try {
+            payload = await request.clone().json();
+          } catch {
+            return new Response(JSON.stringify({ error: "Invalid JSON payload." }), {
+              status: 400, headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          let name = (payload?.name || "").trim();
+          if (!name || name.length > 64) {
+            return new Response(JSON.stringify({ error: "Room name must be 1-64 characters." }), {
+              status: 400, headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          // Delete all persisted chat history for this room.
+          let roomId = env.rooms.idFromName(name);
+          let roomObject = env.rooms.get(roomId);
+          await roomObject.fetch(new Request("https://dummy/delete", {
+            method: "POST",
+            headers: { "X-Auth-Admin": "1" }
+          }));
+
+          // Remove room entry from registry after history is deleted.
+          return registry.fetch(new Request("https://dummy/delete", {
+            method: "POST",
+            body: JSON.stringify({ name }),
+            headers: { "Content-Type": "application/json" }
+          }));
+        }
+
         if (path[1]) {
           return new Response("Not found", { status: 404 });
         }
@@ -444,7 +484,7 @@ async function handleApiRequest(path, request, env) {
       }
 
       let name = decodeURIComponent(path[1]);
-      if (name.length > 32) {
+      if (name.length > 64) {
         return new Response("Name too long", { status: 404 });
       }
 
@@ -582,6 +622,31 @@ export class ChatRoom {
 
           // Now we return the other end of the pair to the client.
           return new Response(null, { status: 101, webSocket: pair[0] });
+        }
+
+        case "/delete": {
+          // Permanently clear this room's persisted message history (admin-only internal call).
+          if (request.method !== "POST") {
+            return new Response("Method not allowed", { status: 405 });
+          }
+          if (request.headers.get("X-Auth-Admin") !== "1") {
+            return new Response("Forbidden", { status: 403 });
+          }
+
+          // Close active sockets so existing clients are disconnected from deleted room state.
+          for (let webSocket of this.sessions.keys()) {
+            try {
+              webSocket.close(1000, "Room deleted by admin");
+            } catch {
+              // Ignore close errors.
+            }
+          }
+          this.sessions.clear();
+
+          await this.storage.deleteAll();
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { "Content-Type": "application/json" }
+          });
         }
 
         case "/export": {
@@ -1092,6 +1157,43 @@ export class RoomRegistry {
           await this.storage.put("rooms", rooms);
 
           return new Response(JSON.stringify({ success: true, name: room.name, archived: room.archived }), {
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        case "/delete": {
+          let { name } = await request.json();
+          if (!name || typeof name !== "string") {
+            return new Response(JSON.stringify({ error: "Room name is required." }), {
+              status: 400, headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          name = name.trim();
+          if (name.length === 0 || name.length > 64) {
+            return new Response(JSON.stringify({ error: "Room name must be 1-64 characters." }), {
+              status: 400, headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          let rooms = await this.loadRooms();
+          let index = rooms.findIndex(r => r.name === name);
+          if (index === -1) {
+            return new Response(JSON.stringify({ error: "Room not found." }), {
+              status: 404, headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          if (!rooms[index].archived) {
+            return new Response(JSON.stringify({ error: "Only archived rooms can be permanently deleted." }), {
+              status: 400, headers: { "Content-Type": "application/json" }
+            });
+          }
+
+          rooms.splice(index, 1);
+          await this.storage.put("rooms", rooms);
+
+          return new Response(JSON.stringify({ success: true, name }), {
             headers: { "Content-Type": "application/json" }
           });
         }

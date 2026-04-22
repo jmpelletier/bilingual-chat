@@ -412,6 +412,7 @@ body {
 .room-actions {
   display: flex;
   align-items: center;
+  gap: 6px;
   flex: 0 0 auto;
 }
 
@@ -431,6 +432,26 @@ body {
 }
 
 .archive-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.delete-btn {
+  display: inline-block;
+  border: 1px solid #fecaca;
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.delete-btn:hover {
+  background: #fecaca;
+}
+
+.delete-btn:disabled {
   opacity: 0.6;
   cursor: default;
 }
