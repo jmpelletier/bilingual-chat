@@ -365,6 +365,7 @@ function startChat() {
 }
 
 let lastSeenTimestamp = 0;
+let wroteWelcomeMessages = false;
 let messageElements = new Map();
 
 function join() {
@@ -414,7 +415,16 @@ function join() {
         }
       }
     } else if (data.ready) {
-      // Nothing
+      // Write a welcome message
+      if (!wroteWelcomeMessages) {
+        wroteWelcomeMessages = true;
+
+        addChatMessage(null,
+            "Welcome to the discussion. You can post in English or Japanese. All messages are automatically translated!");
+
+        addChatMessage(null,
+          "ディスカッションへようこそ。英語でも日本語でも投稿できます。すべてのメッセージが自動的に翻訳されます！");
+      }
     } else if (data.type === "translation") {
       let el = messageElements.get(data.timestamp);
       if (el) {
