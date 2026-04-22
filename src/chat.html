@@ -345,23 +345,23 @@ function startChat() {
     document.location.reload();
   });
 
-  // Logout handler
-  logoutBtn.addEventListener("click", async () => {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-    } catch (err) {
-      // Ignore errors, clear local state anyway.
-    }
-    if (currentWebSocket) {
-      currentWebSocket.close();
-      currentWebSocket = null;
-    }
-    document.location.hash = "";
-    document.location.reload();
-  });
-
   join();
 }
+
+// Logout is available from both room chooser and chat view.
+logoutBtn.addEventListener("click", async () => {
+  try {
+    await fetch("/api/auth/logout", { method: "POST" });
+  } catch (err) {
+    // Ignore errors, clear local state anyway.
+  }
+  if (currentWebSocket) {
+    currentWebSocket.close();
+    currentWebSocket = null;
+  }
+  document.location.hash = "";
+  document.location.reload();
+});
 
 let lastSeenTimestamp = 0;
 let wroteWelcomeMessages = false;

@@ -171,7 +171,7 @@ function startNameChooser() {
 function startRoomChooser() {
   roomForm.style.display = "";
   roomsBtn.style.display = "none";
-  exportBtn.style.display = "";
+  exportBtn.style.display = "none";
   createRoomSection.style.display = isAdminUser ? "" : "none";
 
   if (document.location.hash.length > 1) {
@@ -402,21 +402,6 @@ function startChat() {
     }
   });
 
-  // Logout handler
-  logoutBtn.addEventListener("click", async () => {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-    } catch (err) {
-      // Ignore errors, clear local state anyway.
-    }
-    if (currentWebSocket) {
-      currentWebSocket.close();
-      currentWebSocket = null;
-    }
-    document.location.hash = "";
-    document.location.reload();
-  });
-
   join();
 }
 
@@ -612,6 +597,21 @@ document.addEventListener("click", () => {
   let prev = chatlog && chatlog.querySelector(".message.highlighted");
   if (prev) prev.classList.remove("highlighted");
   if (chatlog) chatlog.classList.remove("has-highlight");
+});
+
+// Logout is available from both room chooser and chat view.
+logoutBtn.addEventListener("click", async () => {
+  try {
+    await fetch("/api/auth/logout", { method: "POST" });
+  } catch (err) {
+    // Ignore errors, clear local state anyway.
+  }
+  if (currentWebSocket) {
+    currentWebSocket.close();
+    currentWebSocket = null;
+  }
+  document.location.hash = "";
+  document.location.reload();
 });
 
 // Start the auth flow on page load
