@@ -117,9 +117,11 @@ export default {
       let path = url.pathname.slice(1).split('/');
 
       if (!path[0]) {
-        // Serve our HTML at the root path.
+        // Serve admin UI at root for authenticated admins; otherwise serve normal UI.
         if (!cssHash) cssHash = await cssHashPromise;
-        let html = HTML.replace('/chat.css"', '/chat.css?v=' + cssHash + '"');
+        let session = await validateSession(request, env);
+        let page = session && session.admin ? ADMIN_HTML : HTML;
+        let html = page.replace('/chat.css"', '/chat.css?v=' + cssHash + '"');
         return new Response(html, {headers: {"Content-Type": "text/html;charset=UTF-8"}});
       }
 
