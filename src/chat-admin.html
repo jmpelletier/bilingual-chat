@@ -44,6 +44,10 @@
         <span id="header-title"></span>
         <span id="header-user"></span>
       </div>
+      <div id="display-controls">
+        <span id="display-label">Display</span>
+        <button id="view-toggle-btn" class="toolbar-btn" type="button" aria-pressed="false">Columns</button>
+      </div>
       <button id="rooms-btn" class="toolbar-btn" type="button">Rooms</button>
       <button id="export-btn" class="toolbar-btn" type="button">Export</button>
       <button id="logout-btn" class="toolbar-btn" type="button">Logout</button>
@@ -79,9 +83,15 @@ let chatInput = document.querySelector("#chat-input");
 let logoutBtn = document.querySelector("#logout-btn");
 let roomsBtn = document.querySelector("#rooms-btn");
 let exportBtn = document.querySelector("#export-btn");
+let displayControls = document.querySelector("#display-controls");
+let viewToggleBtn = document.querySelector("#view-toggle-btn");
 
 // Is the chatlog scrolled to the bottom?
 let isAtBottom = true;
+let isChatActive = false;
+let isColumnsMode = false;
+let columnsModeAvailable = false;
+const MIN_COLUMNS_MODE_WIDTH = 1100;
 
 let username;  // display name
 let userEmail;
@@ -91,6 +101,52 @@ let isAdminUser = false;
 let hostname = window.location.host;
 if (hostname == "") {
   hostname = "edge-chat-demo.cloudflareworkers.com";
+}
+
+function isColumnsModeSupported() {
+  return window.innerWidth >= MIN_COLUMNS_MODE_WIDTH;
+}
+
+function scrollToLatest() {
+  if (isColumnsMode) {
+    chatlog.scrollLeft = chatlog.scrollWidth;
+  } else {
+    chatlog.scrollTop = chatlog.scrollHeight;
+  }
+}
+
+function updateIsAtBottom() {
+  if (isColumnsMode) {
+    isAtBottom = chatlog.scrollLeft + chatlog.clientWidth >= chatlog.scrollWidth - 2;
+  } else {
+    isAtBottom = chatlog.scrollTop + chatlog.clientHeight >= chatlog.scrollHeight - 2;
+  }
+}
+
+function applyColumnsMode(enabled) {
+  let nextMode = !!enabled && columnsModeAvailable;
+  isColumnsMode = nextMode;
+  chatlog.classList.toggle("columns-mode", isColumnsMode);
+  viewToggleBtn.textContent = isColumnsMode ? "List" : "Columns";
+  viewToggleBtn.setAttribute("aria-pressed", isColumnsMode ? "true" : "false");
+  requestAnimationFrame(() => {
+    if (isAtBottom) scrollToLatest();
+    updateIsAtBottom();
+  });
+}
+
+function refreshDisplayControls() {
+  columnsModeAvailable = isColumnsModeSupported();
+
+  if (!isChatActive || !columnsModeAvailable) {
+    displayControls.style.display = "none";
+  } else {
+    displayControls.style.display = "flex";
+  }
+
+  if (!columnsModeAvailable && isColumnsMode) {
+    applyColumnsMode(false);
+  }
 }
 
 // =========================================================
@@ -172,6 +228,7 @@ function startRoomChooser() {
   roomForm.style.display = "";
   roomsBtn.style.display = "none";
   exportBtn.style.display = "none";
+  displayControls.style.display = "none";
   createRoomSection.style.display = isAdminUser ? "" : "none";
 
   if (document.location.hash.length > 1) {
@@ -364,6 +421,8 @@ function startChat() {
   roomForm.remove();
   roomsBtn.style.display = "";
   exportBtn.style.display = "";
+  isChatActive = true;
+  refreshDisplayControls();
 
   roomname = roomname.trim();
 
@@ -382,7 +441,7 @@ function startChat() {
     currentWebSocket.send(JSON.stringify({message: msg}));
     chatInput.value = "";
     chatInput.style.height = "auto";
-    chatlog.scrollBy(0, 1e8);
+    scrollToLatest();
   }
 
   document.querySelector("#send-btn").addEventListener("click", sendMessage);
@@ -397,16 +456,31 @@ function startChat() {
   });
 
   chatlog.addEventListener("scroll", event => {
-    isAtBottom = chatlog.scrollTop + chatlog.clientHeight >= chatlog.scrollHeight;
+    updateIsAtBottom();
   });
 
   if('visualViewport' in window) {
     window.visualViewport.addEventListener('resize', function(event) {
       if (isAtBottom) {
-        chatlog.scrollBy(0, 1e8);
+        scrollToLatest();
       }
     });
   }
+
+  window.addEventListener("resize", () => {
+    let wasAtBottom = isAtBottom;
+    refreshDisplayControls();
+    if (wasAtBottom) {
+      scrollToLatest();
+    }
+    updateIsAtBottom();
+  });
+
+  viewToggleBtn.addEventListener("click", () => {
+    applyColumnsMode(!isColumnsMode);
+  });
+
+  applyColumnsMode(false);
 
   // Rooms button handler
   roomsBtn.addEventListener("click", () => {
@@ -509,7 +583,7 @@ function join() {
           }
           jaEl.textContent = originalText;
         }
-        if (isAtBottom) chatlog.scrollBy(0, 1e8);
+        if (isAtBottom) scrollToLatest();
       }
     } else if (data.type === "like") {
       let el = messageElements.get(data.timestamp);
@@ -545,7 +619,7 @@ function addChatMessage(name, text, timestamp, translation, admin, likes) {
     div.className = "system-msg";
     div.textContent = text;
     chatlog.appendChild(div);
-    if (isAtBottom) chatlog.scrollBy(0, 1e8);
+    if (isAtBottom) scrollToLatest();
     return;
   }
 
@@ -626,7 +700,7 @@ function addChatMessage(name, text, timestamp, translation, admin, likes) {
 
   chatlog.appendChild(div);
   if (isAtBottom) {
-    chatlog.scrollBy(0, 1e8);
+    scrollToLatest();
   }
 }
 

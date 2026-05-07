@@ -51,6 +51,16 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+#display-controls {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  margin-left: 10px;
+}
+#display-label {
+  font-size: 12px;
+  color: #666;
+}
 .toolbar-btn {
   padding: 6px 14px;
   border: none;
@@ -108,6 +118,34 @@ body {
 }
 #spacer {
   flex: 1 0 auto;
+}
+
+#chatlog.columns-mode {
+  display: block;
+  overflow-x: auto;
+  overflow-y: hidden;
+  column-width: 320px;
+  column-gap: 16px;
+  column-fill: auto;
+}
+#chatlog.columns-mode #spacer {
+  display: none;
+}
+#chatlog.columns-mode .message,
+#chatlog.columns-mode .system-msg {
+  break-inside: avoid;
+  margin-bottom: 8px;
+}
+#chatlog.columns-mode .message {
+  max-width: 100%;
+  width: fit-content;
+  min-width: 220px;
+}
+#chatlog.columns-mode .message.other {
+  margin-right: auto;
+}
+#chatlog.columns-mode .message.self {
+  margin-left: auto;
 }
 
 /* Message bubbles */
