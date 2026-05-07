@@ -2,3 +2,5 @@ credentials.conf
 metadata.json
 node_modules/
 dist/
+.wrangler
+.dev.vars
