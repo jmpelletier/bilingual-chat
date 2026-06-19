@@ -4,3 +4,7 @@ node_modules/
 dist/
 .wrangler
 .dev.vars
+
+# Python
+.venv/
+__pycache__/
