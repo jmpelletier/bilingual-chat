@@ -1,64 +1,16 @@
-// This is the Edge Chat Demo Worker, built using Durable Objects!
-
-// ===============================
-// Introduction to Modules
-// ===============================
+// Bilingual Chat Worker.
 //
-// The first thing you might notice, if you are familiar with the Workers platform, is that this
-// Worker is written differently from others you may have seen. It even has a different file
-// extension. The `mjs` extension means this JavaScript is an ES Module, which, among other things,
-// means it has imports and exports. Unlike other Workers, this code doesn't use
-// `addEventListener("fetch", handler)` to register its main HTTP handler; instead, it _exports_
-// a handler, as we'll see below.
+// This file handles:
+// - HTTP routing for pages and APIs.
+// - Token-based login and cookie-backed sessions.
+// - Durable Object coordination for room state, presence, and rate limiting.
+// - Message translation, likes, and chat export.
 //
-// This is a new way of writing Workers that we expect to introduce more broadly in the future. We
-// like this syntax because it is *composable*: You can take two workers written this way and
-// merge them into one worker, by importing the two Workers' exported handlers yourself, and then
-// exporting a new handler that call into the other Workers as appropriate.
-//
-// This new syntax is required when using Durable Objects, because your Durable Objects are
-// implemented by classes, and those classes need to be exported. The new syntax can be used for
-// writing regular Workers (without Durable Objects) too, but for now, you must be in the Durable
-// Objects beta to be able to use the new syntax, while we work out the quirks.
-//
-// To see an example configuration for uploading module-based Workers, check out the wrangler.toml
-// file or one of our Durable Object templates for Wrangler:
-//   * https://github.com/cloudflare/durable-objects-template
-//   * https://github.com/cloudflare/durable-objects-rollup-esm
-//   * https://github.com/cloudflare/durable-objects-webpack-commonjs
-
-// ===============================
-// Required Environment
-// ===============================
-//
-// This worker, when deployed, must be configured with two environment bindings:
-// * rooms: A Durable Object namespace binding mapped to the ChatRoom class.
-// * limiters: A Durable Object namespace binding mapped to the RateLimiter class.
-//
-// Incidentally, in pre-modules Workers syntax, "bindings" (like KV bindings, secrets, etc.)
-// appeared in your script as global variables, but in the new modules syntax, this is no longer
-// the case. Instead, bindings are now delivered in an "environment object" when an event handler
-// (or Durable Object class constructor) is called. Look for the variable `env` below.
-//
-// We made this change, again, for composability: The global scope is global, but if you want to
-// call into existing code that has different environment requirements, then you need to be able
-// to pass the environment as a parameter instead.
-//
-// Once again, see the wrangler.toml file to understand how the environment is configured.
-
-// =======================================================================================
-// The regular Worker part...
-//
-// This section of the code implements a normal Worker that receives HTTP requests from external
-// clients. This part is stateless.
-
-// With the introduction of modules, we're experimenting with allowing text/data blobs to be
-// uploaded and exposed as synthetic modules. In wrangler.toml we specify a rule that files ending
-// in .html should be uploaded as "Data", equivalent to content-type `application/octet-stream`.
-// So when we import it as `HTML` here, we get the HTML content as an `ArrayBuffer`. This lets us
-// serve our app's static asset without relying on any separate storage. (However, the space
-// available for assets served this way is very limited; larger sites should continue to use Workers
-// KV to serve assets.)
+// Required bindings are configured in wrangler.toml:
+// - rooms (ChatRoom)
+// - limiters (RateLimiter)
+// - authSessions (AuthSession)
+// - roomRegistry (RoomRegistry)
 import HTML_RAW from "./chat.html";
 import ADMIN_HTML_RAW from "./chat-admin.html";
 import CSS_RAW from "./chat.css";
@@ -78,9 +30,7 @@ const cssHashPromise = computeCssHash();
 let cssHash = "";
 cssHashPromise.then(h => { cssHash = h; });
 
-// `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
-// try/catch and return errors to the client. You probably wouldn't want to use this in production
-// code but it is convenient when debugging and iterating.
+// Wrap request handlers and return debuggable error responses.
 async function handleErrors(request, func) {
   try {
     return await func();
@@ -100,14 +50,7 @@ async function handleErrors(request, func) {
   }
 }
 
-// In modules-syntax workers, we use `export default` to export our script's main event handlers.
-// Here, we export one handler, `fetch`, for receiving HTTP requests. In pre-modules workers, the
-// fetch handler was registered using `addEventHandler("fetch", event => { ... })`; this is just
-// new syntax for essentially the same thing.
-//
-// `fetch` isn't the only handler. If your worker runs on a Cron schedule, it will receive calls
-// to a handler named `scheduled`, which should be exported here in a similar way. We will be
-// adding other handlers for other types of events over time.
+// Main worker entry point.
 export default {
   async fetch(request, env) {
     return await handleErrors(request, async () => {
@@ -172,6 +115,7 @@ export default {
 
           let resp = await stub.fetch(new Request("https://dummy/create-session", {
             method: "POST",
+            body: JSON.stringify({ email, admin: isAdmin }),
             headers: { "Content-Type": "application/json" }
           }));
 
@@ -184,8 +128,8 @@ export default {
           let maxAge = 30 * 24 * 60 * 60; // 30 days
           let headers = new Headers({ "Location": isAdmin ? "/admin" : "/" });
           headers.append("Set-Cookie", sessionCookie(sessionToken, maxAge));
-          headers.append("Set-Cookie", `session_email=${encodeURIComponent(email)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`);
-          headers.append("Set-Cookie", `session_admin=${isAdmin ? "1" : "0"}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`);
+          headers.append("Set-Cookie", `session_email=${encodeURIComponent(email)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAge}`);
+          headers.append("Set-Cookie", `session_admin=${isAdmin ? "1" : "0"}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAge}`);
           return new Response(null, { status: 302, headers });
         }
 
@@ -211,7 +155,7 @@ function getSessionToken(request) {
 
 // Helper: create a Set-Cookie header value for the session token
 function sessionCookie(token, maxAgeSecs) {
-  return `session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAgeSecs}`;
+  return `session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAgeSecs}`;
 }
 
 // Helper: escape a value for CSV (RFC 4180)
@@ -269,11 +213,11 @@ async function validateSession(request, env) {
   if (!resp.ok) return null;
   let data = await resp.json();
 
-  // Check admin cookie
-  let adminMatch = cookie.match(/(?:^|;\s*)session_admin=([^;]+)(?:;|$)/);
-  let admin = adminMatch ? adminMatch[1] === "1" : false;
-
-  return { email, displayName: data.displayName, admin };
+  return {
+    email: (data.email || email).toLowerCase().trim(),
+    displayName: data.displayName,
+    admin: !!data.admin
+  };
 }
 
 // =======================================================================================
@@ -365,7 +309,8 @@ async function handleAuthRequest(path, request, env) {
 
       let headers = new Headers({ "Content-Type": "application/json" });
       headers.append("Set-Cookie", sessionCookie("0".repeat(64), 0));
-      headers.append("Set-Cookie", `session_email=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`);
+      headers.append("Set-Cookie", `session_email=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`);
+      headers.append("Set-Cookie", `session_admin=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`);
       return new Response(JSON.stringify({ success: true }), { headers });
     }
 
@@ -543,11 +488,9 @@ async function handleApiRequest(path, request, env) {
 }
 
 // =======================================================================================
-// The ChatRoom Durable Object Class
+// ChatRoom Durable Object
 
-// ChatRoom implements a Durable Object that coordinates an individual chat room. Participants
-// connect to the room using WebSockets, and the room broadcasts messages from each participant
-// to all others.
+// Coordinates one room's live sockets and persisted message history.
 export class ChatRoom {
   constructor(state, env) {
     this.state = state
@@ -588,10 +531,7 @@ export class ChatRoom {
     this.lastTimestamp = 0;
   }
 
-  // The system will call fetch() whenever an HTTP request is sent to this Object. Such requests
-  // can only be sent from other Worker code, such as the code above; these requests don't come
-  // directly from the internet. In the future, we will support other formats than HTTP for these
-  // communications, but we started with HTTP for its familiarity.
+  // Handle internal HTTP requests routed from the Worker.
   async fetch(request) {
     return await handleErrors(request, async () => {
       let url = new URL(request.url);
@@ -944,15 +884,9 @@ export class ChatRoom {
 }
 
 // =======================================================================================
-// The RateLimiter Durable Object class.
+// RateLimiter Durable Object
 
-// RateLimiter implements a Durable Object that tracks the frequency of messages from a particular
-// source and decides when messages should be dropped because the source is sending too many
-// messages.
-//
-// We utilize this in ChatRoom, above, to apply a per-IP-address rate limit. These limits are
-// global, i.e. they apply across all chat rooms, so if a user spams one chat room, they will find
-// themselves rate limited in all other chat rooms simultaneously.
+// Tracks cooldown state per source IP and applies it across all rooms.
 export class RateLimiter {
   constructor(state, env) {
     // Timestamp at which this IP will next be allowed to send a message. Start in the distant
@@ -985,14 +919,11 @@ export class RateLimiter {
   }
 }
 
-// RateLimiterClient implements rate limiting logic on the caller's side.
+// Client helper used by ChatRoom to interact with RateLimiter.
 class RateLimiterClient {
-  // The constructor takes two functions:
-  // * getLimiterStub() returns a new Durable Object stub for the RateLimiter object that manages
-  //   the limit. This may be called multiple times as needed to reconnect, if the connection is
-  //   lost.
-  // * reportError(err) is called when something goes wrong and the rate limiter is broken. It
-  //   should probably disconnect the client, so that they can reconnect and start over.
+  // Constructor args:
+  // * getLimiterStub(): returns a DO stub for the caller's limiter bucket.
+  // * reportError(err): callback when limiter communication fails.
   constructor(getLimiterStub, reportError) {
     this.getLimiterStub = getLimiterStub;
     this.reportError = reportError;
@@ -1230,21 +1161,23 @@ export class AuthSession {
       switch (url.pathname) {
         case "/create-session": {
           let now = Date.now();
+          let payload = {};
+          try {
+            payload = await request.json();
+          } catch {
+            // Allow empty body for compatibility; defaults below will apply.
+          }
+
+          let email = typeof payload.email === "string" ? payload.email.toLowerCase().trim() : null;
+          let admin = !!payload.admin;
 
           // Generate session token
           let tokenBytes = new Uint8Array(32);
           crypto.getRandomValues(tokenBytes);
           let token = [...tokenBytes].map(b => b.toString(16).padStart(2, "0")).join("");
 
-          // Load existing sessions, prune expired, add new, cap at MAX_SESSIONS
-          let sessions = (await this.storage.get("sessions")) || [];
-          sessions = sessions.filter(s => s.expiresAt > now);
-          if (sessions.length >= MAX_SESSIONS) {
-            // Evict oldest
-            sessions.sort((a, b) => a.expiresAt - b.expiresAt);
-            sessions = sessions.slice(sessions.length - MAX_SESSIONS + 1);
-          }
-          sessions.push({ token, expiresAt: now + SESSION_MAX_AGE_MS });
+          // Replace existing sessions so each new login invalidates prior saved auth state.
+          let sessions = [{ token, expiresAt: now + SESSION_MAX_AGE_MS, email, admin }];
           await this.storage.put("sessions", sessions);
 
           return new Response(JSON.stringify({ token }), {
@@ -1257,6 +1190,13 @@ export class AuthSession {
           let now = Date.now();
 
           let sessions = (await this.storage.get("sessions")) || [];
+          sessions = sessions.filter(s => s.expiresAt > now);
+          if (sessions.length > MAX_SESSIONS) {
+            sessions.sort((a, b) => a.expiresAt - b.expiresAt);
+            sessions = sessions.slice(sessions.length - MAX_SESSIONS);
+          }
+          await this.storage.put("sessions", sessions);
+
           let session = sessions.find(s => s.token === token && s.expiresAt > now);
           if (!session) {
             return new Response(JSON.stringify({ error: "Invalid session." }), {
@@ -1265,7 +1205,12 @@ export class AuthSession {
           }
 
           let displayName = (await this.storage.get("displayName")) || null;
-          return new Response(JSON.stringify({ valid: true, displayName }), {
+          return new Response(JSON.stringify({
+            valid: true,
+            displayName,
+            email: session.email || null,
+            admin: !!session.admin
+          }), {
             headers: { "Content-Type": "application/json" }
           });
         }
